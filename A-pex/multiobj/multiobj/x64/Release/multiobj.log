@@ -1,0 +1,8 @@
+﻿  driver.cpp
+D:\Thesis\A-pex\multiobj\src\driver.cpp(68,42): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data
+D:\Thesis\A-pex\multiobj\src\driver.cpp(69,43): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data
+  Generating code
+  Previous IPDB and IOBJ mismatch, fall back to full compilation.
+  All 2773 functions were compiled because no usable IPDB/IOBJ from previous compilation was found.
+  Finished generating code
+  multiobj.vcxproj -> D:\Thesis\A-pex\multiobj\x64\Release\multiobj.exe

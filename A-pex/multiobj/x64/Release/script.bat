@@ -1,0 +1,1 @@
+multiobj -m "D:\Thesis\DIMCAS\NY\USA-road-d.NY.gr" "D:\Thesis\DIMCAS\NY\USA-road-t.NY.gr" -e 0.001 -s 20002 -g 164983 -a Apex -o output.txt -l log.json

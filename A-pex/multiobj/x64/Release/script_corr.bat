@@ -1,0 +1,1 @@
+multiobj -m "D:\Thesis\DIMCAS\NY_correlated\Distance_corr_96.gr" "D:\Thesis\DIMCAS\NY_correlated\Time_corr_96.gr" -e 0.001 -s 20002 -g 164983 -a Apex -o output.txt -l log.json
