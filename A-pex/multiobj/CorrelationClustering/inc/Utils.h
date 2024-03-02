@@ -43,6 +43,6 @@ bool load_clusters_mapping(std::string filename, ClusterMapping& clusters_map);
 bool build_lookup_table(std::unordered_set<int>& lut, std::vector<int> cluster_nodes);
 bool get_boundary_nodes(std::vector<int>& boundary_nodes, AdjacencyMatrix graph, const std::unordered_set<int>lookupTable);
 bool all_pairs_shortest_paths(std::vector<int> cluster_nodes, std::vector<int> boundary_nodes,
-    AdjacencyMatrix graph, AllPairsCostsTensor& costs, std::vector<double> approx_factor);
+    AdjacencyMatrix graph, std::vector<double> approx_factor);
 int get_edge_id(int source, int target, AdjacencyMatrix graph);
 bool normalize_edge_costs(std::vector<Edge>& edges);

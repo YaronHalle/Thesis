@@ -9,6 +9,27 @@
 
 #define MAX_PATH_LENGTH 1e6
 
+// ANSI escape codes for color
+#define GREEN "\033[32m"
+#define RESET "\033[0m"
+
+void updateProgressBar(int progress, int total) {
+    const int barWidth = 50;
+
+    std::cout << GREEN << "[";
+    int pos = barWidth * progress / total;
+    for (int i = 0; i < barWidth; ++i) {
+        if (i < pos)
+            std::cout << "=";
+        else if (i == pos)
+            std::cout << ">";
+        else
+            std::cout << " ";
+    }
+    std::cout << "] " << int(100.0 * progress / total) << " %\r" << RESET;
+    std::cout.flush();
+}
+
 int get_edge_id(int source, int target, AdjacencyMatrix graph)
 {
     std::vector<Edge> Edges = graph[source];
@@ -320,18 +341,17 @@ bool is_path_contractable(CrossObjectiveCost crossCostsMat, std::vector<double> 
     return false;
 }
 
-/*
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-All-Pairs Shortest-Paths solver based on Dijkstra algorithm O(VlogV + E)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-*/
-
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// All-Pairs Shortest-Paths solver based on Dijkstra algorithm O(VlogV + E)
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 bool all_pairs_shortest_paths(std::vector<int> cluster_nodes, std::vector<int> boundary_nodes,
-    AdjacencyMatrix entire_graph, AllPairsCostsTensor& costs, std::vector<double> approx_factor)
+    AdjacencyMatrix entire_graph, std::vector<double> approx_factor)
 {
     int cluster_nodes_count = cluster_nodes.size();
     int boundary_nodes_count = boundary_nodes.size();
     int objectives_count = entire_graph.get_num_of_objectives();
+
+    std::cout << "Invokg all-pairs shortest-path for " << boundary_nodes_count << " boundary nodes..." << std::endl;
 
     // Asserting that number of boundary nodes is not greater than the total number of cluster's nodes
     if (boundary_nodes_count > cluster_nodes_count)
@@ -355,58 +375,37 @@ bool all_pairs_shortest_paths(std::vector<int> cluster_nodes, std::vector<int> b
 
     // Hash table between node id and its node successors
     std::unordered_map<int, std::unordered_map<int, int>> succesor_node_to_edge_id;
-        
-    // Allocating memory for the cross-costs tensor
-    std::cout << "Costs output structure memory allocation ... ";
-    costs.resize(boundary_nodes_count); // Resize the matrix to have 2 rows
-    for (int i = 0; i < boundary_nodes_count; i++)
+    
+    CrossObjectiveCost costs;
+    costs.resize(objectives_count);
+    for (int k = 0; k < objectives_count; k++)
     {
-        costs[i].resize(boundary_nodes_count); // Resize each row to have 2 elements
+        costs[k].resize(objectives_count, -1);
     }
-
-    for (int i = 0; i < boundary_nodes_count; i++)
-    {
-        for (int j = 0; j < boundary_nodes_count; j++)
-        {
-            costs[i][j].resize(objectives_count);
-            for (int k = 0; k < objectives_count; k++)
-            {
-                costs[i][j][k].resize(objectives_count, -1);
-            }
-        }
-    }
-    std::vector<std::vector<int>> pathLengths(boundary_nodes_count, std::vector<int>(boundary_nodes_count));
-    std::cout << "Done" << std::endl;
-
+    
     // Defining the graph type
     typedef boost::adjacency_list<boost::vecS, boost::vecS, boost::directedS,
         boost::no_property, boost::property<boost::edge_weight_t, double>> Graph;
 
+    // Allocating a graph for each objective dimension
+    std::vector<Graph> Graphs(objectives_count);
+
     std::vector<int> path(MAX_PATH_LENGTH);
     int path_length;
-
-    std::cout << "Allocating memory for distances and predecessors structures ... ";
-    // Define the vector to store distances
-    std::vector<std::vector<double>> distances(cluster_nodes_count, std::vector<double>(cluster_nodes_count));
-
-    // Define the vector to store predecessors
-    std::vector<std::vector<int>> predecessors(cluster_nodes_count, std::vector<int>(cluster_nodes_count));
-
-    std::cout << "Done" << std::endl;
-
+    
     // Computing all-pairs shortest path for every objective function
+    std::cout << "Constructing graphs for each objective ... ";
     for (int objective_id = 0; objective_id < objectives_count; objective_id++)
     {
-        std::cout << "Constructing graph for objective " << (objective_id + 1) << " ... ";
         // Define the graph object
-        Graph g(cluster_nodes_count);
+        Graphs[objective_id] = Graph(cluster_nodes_count);
 
         // Building the adjacency matrix for the specific objective function
         for (int i = 0; i < cluster_nodes_count; i++)
         {
             std::vector<Edge> edges = entire_graph[cluster_nodes[i]];
             std::unordered_map<int, int> edges_hash;
-            for(int k = 0; k < edges.size() ; k++)
+            for (int k = 0; k < edges.size(); k++)
             {
                 // Check if both target node is part of the cluster
                 if (node_id_to_adj_mat_id.find(edges[k].target) != node_id_to_adj_mat_id.end())
@@ -415,7 +414,7 @@ bool all_pairs_shortest_paths(std::vector<int> cluster_nodes, std::vector<int> b
                     int adj_mat_source_id = i;
                     int adj_mat_target_id = node_id_to_adj_mat_id[edges[k].target];
                     double cost = edges[k].cost[objective_id];
-                    boost::add_edge(adj_mat_source_id, adj_mat_target_id, cost, g);
+                    boost::add_edge(adj_mat_source_id, adj_mat_target_id, cost, Graphs[objective_id]);
                     if (cost < 0)
                     {
                         std::cout << "Found negative edge weight of cost= " << cost << " in start vertex = " << i << std::endl;
@@ -432,28 +431,37 @@ bool all_pairs_shortest_paths(std::vector<int> cluster_nodes, std::vector<int> b
                 // Hash should be populated only once
                 succesor_node_to_edge_id[i] = edges_hash;
             }
-            
         }
-        std::cout << "Done" << std::endl;
+    }
+    std::cout << "Done" << std::endl;
 
-        // Define a property map for storing edge weights
-        typedef boost::property_map<Graph, boost::edge_weight_t>::type EdgeWeightMap;
-        EdgeWeightMap weightMap = boost::get(boost::edge_weight, g);
+    std::cout << "Invoking Dijkstra All-Pairs Shortest-Path computation ... " << std::endl;
+    auto start = std::chrono::high_resolution_clock::now();
 
-        // Call the All-Pairs Dijkstra algorithm
-        std::cout << "All-Pairs Dijkstra invoked for objective number " << (objective_id + 1) << " ... ";
-        auto start = std::chrono::high_resolution_clock::now();
+    std::vector<std::vector<double>> multi_objective_dist(objectives_count, std::vector<double>(cluster_nodes_count));
+    std::vector<std::vector<int>> multi_objective_pred(objectives_count, std::vector<int>(cluster_nodes_count));
 
-        std::vector<double> dist(boost::num_vertices(g));
-        std::vector<int> pred(boost::num_vertices(g));
+    int reachable_paths = 0;
+    int contractable_paths = 0;
+    double progress;
+    double last_progress = -1;
 
-        for (int source = 0; source < boundary_nodes_count; ++source) 
+    for (int source = 0; source < boundary_nodes_count; ++source)
+    {
+        progress = (double)source / boundary_nodes_count;
+        if(progress - last_progress > 0.01)
+        { 
+            updateProgressBar(source, boundary_nodes_count);
+            last_progress = progress;
+        }
+
+        int source_id = node_id_to_adj_mat_id[boundary_nodes[source]];
+
+        for (int objective_id = 0; objective_id < objectives_count; objective_id++)
         {
-            int source_id = node_id_to_adj_mat_id[boundary_nodes[source]];
-            
-            boost::dijkstra_shortest_paths(g, source_id,
-                boost::distance_map(boost::make_iterator_property_map(dist.begin(), boost::get(boost::vertex_index, g)))
-                .predecessor_map(boost::make_iterator_property_map(pred.begin(), boost::get(boost::vertex_index, g))));
+            boost::dijkstra_shortest_paths(Graphs[objective_id], source_id,
+                boost::distance_map(boost::make_iterator_property_map(multi_objective_dist[objective_id].begin(), boost::get(boost::vertex_index, Graphs[objective_id])))
+                .predecessor_map(boost::make_iterator_property_map(multi_objective_pred[objective_id].begin(), boost::get(boost::vertex_index, Graphs[objective_id]))));
 
             for (int target = 0; target < cluster_nodes_count; ++target)
             {
@@ -461,139 +469,104 @@ bool all_pairs_shortest_paths(std::vector<int> cluster_nodes, std::vector<int> b
 
                 // Checking that target is reachable from source by asserting that
                 // the target's predecessor is NOT itself (marks unreachable node)
-                if (pred[target_id] != target_id)
+                if (multi_objective_pred[objective_id][target_id] == target_id)
                 {
-                    distances[source_id][target_id] = dist[target_id];
-                    predecessors[source_id][target_id] = pred[target_id];
-                }
-                else
-                {
-                    // target is not reachable, marking by a negative number
-                    distances[source_id][target_id] = -1;
+                    multi_objective_dist[objective_id][target_id] = -1;
                 }
             }
         }
-        auto end = std::chrono::high_resolution_clock::now();
-        std::chrono::duration<double> duration = end - start;
-        std::cout << "Done" << std::endl;
-        std::cout << "Finished in " << duration.count() << " [sec]" << std::endl;
 
-        // Updating the cross-costs tensor data structure
-        std::cout << "Updating cross-costs tensor matrix ... ";
-        start = std::chrono::high_resolution_clock::now();
-        for (int source = 0; source < boundary_nodes_count; source++)
+        // At this point, all shortest-paths starting from a given start node are computed for all objectives.
+        // Iterating through all start->target (which are boundary) to check if edges can be contracted.
+        for (int target = 0; target < boundary_nodes_count; target++)
         {
-            int adj_mat_source_id = node_id_to_adj_mat_id[boundary_nodes[source]];
-
-            for (int target = 0; target < boundary_nodes_count; target++)
+            if (source == target)
             {
-                if (source == target)
+                // Avoid equal start and target nodes
+                continue;
+            }
+
+            int target_id = node_id_to_adj_mat_id[boundary_nodes[target]];
+
+            // Checking that source and target are reachable
+            bool target_reachable = multi_objective_dist[0][target_id] >= 0;
+
+            if (!target_reachable)
+            {
+                // Avoid processing of unreachable target nodes
+                continue;
+            }
+
+            reachable_paths++;
+
+            // Reseting the costs structure
+            for (int i = 0; i < objectives_count; i++)
+            {
+                for (int j = 0; j < objectives_count; j++)
                 {
-                    // Avoid equal start and target nodes
-                    continue;
+                    costs[i][j] = 0;
                 }
-                        
-                int adj_mat_target_id = node_id_to_adj_mat_id[boundary_nodes[target]];
+            }
 
-                // Checking that source and target are reachable
-                bool target_reachable = distances[adj_mat_source_id][adj_mat_target_id] >= 0;
-
+            for (int objective_id = 0; objective_id < objectives_count; objective_id++)
+            {
                 // Updating the optimal cost considering the current objective id
-                costs[source][target][objective_id][objective_id] =
-                        distances[adj_mat_source_id][adj_mat_target_id];
+                costs[objective_id][objective_id] =
+                    multi_objective_dist[objective_id][target_id];
 
                 // Updating the rest of the costs (not under the optimization)
                 for (int cross_obj_id = 0; cross_obj_id < objectives_count; cross_obj_id++)
                 {
                     if (objective_id != cross_obj_id)
                     {
-                        if (target_reachable)
+                        costs[objective_id][cross_obj_id] = 0;
+                        reconstructPath_Dijkstra(source_id, target_id,
+                            multi_objective_pred[objective_id], path, &path_length);
+
+                        //pathLengths[source][target] = path_length;
+
+                        for (int i = (path_length - 1); i > 0; i--)
                         {
-                            costs[source][target][objective_id][cross_obj_id] = 0;
-                            reconstructPath_Dijkstra(adj_mat_source_id, adj_mat_target_id, 
-                                predecessors[adj_mat_source_id], path, &path_length);
+                            int out_ind = cluster_nodes[path[i]];
+                            int in_ind = cluster_nodes[path[i - 1]];
 
-                            pathLengths[source][target] = path_length;
-
-                            for (int i = (path_length - 1); i > 0; i--)
+                            int adj_out = node_id_to_adj_mat_id[out_ind];
+                            int adj_in = node_id_to_adj_mat_id[in_ind];
+                            int edge_id = succesor_node_to_edge_id[adj_out][adj_in];
+                            if (edge_id < 0)
                             {
-                                int out_ind = cluster_nodes[path[i]];
-                                int in_ind  = cluster_nodes[path[i - 1]];
-
-                                int adj_out = node_id_to_adj_mat_id[out_ind];
-                                int adj_in  = node_id_to_adj_mat_id[in_ind];
-                                int edge_id = succesor_node_to_edge_id[adj_out][adj_in];
-                                if (edge_id < 0)
-                                {
-                                    std::cout << "Warning! get_edge_id returned (-1)!" << std::endl;
-                                }
-                                costs[source][target][objective_id][cross_obj_id] +=
-                                    entire_graph[out_ind][edge_id].cost[cross_obj_id];
+                                std::cout << "Warning! get_edge_id returned (-1)!" << std::endl;
                             }
-                        }
-                        else
-                        {
-                            // Target is not reachable, marking by a (-1)
-                            costs[source][target][objective_id][cross_obj_id] = -1;
+                            costs[objective_id][cross_obj_id] +=
+                                entire_graph[out_ind][edge_id].cost[cross_obj_id];
                         }
                     }
                 }
             }
-        }
-        end = std::chrono::high_resolution_clock::now();
-        duration = end - start;
-        std::cout << "Done" << std::endl;
-        std::cout << "Finished in " << duration.count() << " [sec]" << std::endl;
-    }
-    
-    // Analysis of pareto-width for edge contraction
-    std::cout << "Pareto-set analysis for edge contraction ... ";
-    auto start = std::chrono::high_resolution_clock::now();
-    int reachable_paths = 0;
-    int contractable_paths = 0;
-    for (int source = 0; source < boundary_nodes_count; source++)
-    {
-        int adj_mat_source_id = node_id_to_adj_mat_id[boundary_nodes[source]];
-        for (int target = 0; target < boundary_nodes_count; target++)
-        {
-            // Skipping degenerated paths
-            if (source == target)
-            {
-                continue;
-            }
 
-            // Checking that source and target are reachable
-            int adj_mat_target_id = node_id_to_adj_mat_id[boundary_nodes[target]];
-            bool target_reachable = distances[adj_mat_source_id][adj_mat_target_id] >= 0;
-            if (!target_reachable)
+            // Full cross-objective costs matrix was computed. Checking if path can be contracted
+            // Asserting valid cross-costs matrix
+            if (costs[0][0] > costs[1][0] ||
+                costs[1][1] > costs[0][1])
             {
-                continue;
+                std::cout << "Invalid cross-costs matrix!" << std::endl;
             }
-            reachable_paths++;
-
-            CrossObjectiveCost crossCostsMat = costs[source][target];
-            // debug
-            if (crossCostsMat[0][0] > crossCostsMat[1][0] || 
-                crossCostsMat[1][1] > crossCostsMat[0][1])
-            {
-                std::cout << "problem\n";
-            }
-            bool pathContractable = is_path_contractable(crossCostsMat, approx_factor);
+            bool pathContractable = is_path_contractable(costs, approx_factor);
             if (pathContractable)
             {
                 contractable_paths++;
             }
-            //std::cout << "Path Length = " << pathLengths[source][target] << " Is_Contractable = " << pathContractable << std::endl;
         }
     }
-    double compression_ratio = (double)contractable_paths / (double)reachable_paths;
-    std::cout << "Reachable paths count = " << reachable_paths << std::endl;
-    std::cout << "Contractable paths count = " << contractable_paths << " (Compression Ratio = " << compression_ratio << ")" << std::endl;
     
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> duration = end - start;
-    std::cout << "Done" << std::endl;
-    std::cout << "Finished in " << duration.count() << " [sec]" << std::endl;
+    std::cout << "\r                                                                          \r";
+    std::cout << "Done, Finished in " << duration.count() << " [sec]" << std::endl;
+
+    double compression_ratio = (double)contractable_paths / (double)reachable_paths;
+    std::cout << "Reachable paths count = " << reachable_paths << std::endl;
+    std::cout << "Contractable paths count = " << contractable_paths << " (Compression Ratio = " << compression_ratio << ")" << std::endl;
     
     return true;
 }

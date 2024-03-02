@@ -6,30 +6,7 @@
 #include <thread>
 #include <unordered_map>
 
-
 using namespace std;
-
-// ANSI escape codes for color
-#define GREEN "\033[32m"
-#define RESET "\033[0m"
-
-void updateProgressBar(int progress, int total) {
-    const int barWidth = 70;
-
-    cout << GREEN << "[";
-    int pos = barWidth * progress / total;
-    for (int i = 0; i < barWidth; ++i) {
-        if (i < pos)
-            cout << "=";
-        else if (i == pos)
-            cout << ">";
-        else
-            cout << " ";
-    }
-    cout << "] " << int(100.0 * progress / total) << " %\r" << RESET;
-    cout.flush();
-}
-
 
 int main(int argc, char** argv)
 {
@@ -79,7 +56,7 @@ int main(int argc, char** argv)
     std::cout << "Graph Size: " << graph_size << std::endl;
 
     // Normalizing costs to [0,1] segment
-    normalize_edge_costs(edges);
+    //normalize_edge_costs(edges);
 
     // Constructing the graph's adjacency matrix
     AdjacencyMatrix graph(graph_size, edges);
@@ -96,7 +73,7 @@ int main(int argc, char** argv)
     // ==========================================================================
     // Computing all-pairs shortest-path between all boundary nodes
     // ==========================================================================
-    std::vector<double> approx_factor = { 0.01, 0.01 };
+    std::vector<double> approx_factor = { 0.1, 0.1 };
     for (int cluster_id = 0; cluster_id < clusters_map.size(); cluster_id++)
     {
         // Creating a lookup table of all nodes inside the cluster
@@ -107,8 +84,7 @@ int main(int argc, char** argv)
         std::vector<int> boundary_nodes;
         get_boundary_nodes(boundary_nodes, graph, lookupTable);
 
-        //boundary_nodes.resize(10);
-        
+        //boundary_nodes.resize(100);
 
         // DEBUG EXPORT TO FILE
         /*
@@ -137,16 +113,12 @@ int main(int argc, char** argv)
         boundary_nodes.resize(5000);
         */
 
-        int bounary_nodes_count = boundary_nodes.size();
-        AllPairsCostsTensor costs(bounary_nodes_count);
+        //int bounary_nodes_count = boundary_nodes.size();
+        //AllPairsCostsTensor costs(bounary_nodes_count);
 
-        std::cout << "Invokg all-pairs shortest-path for " << bounary_nodes_count << " nodes..." << std::endl;
-        all_pairs_shortest_paths(cluster_nodes, boundary_nodes, graph, costs, approx_factor);
+        
+        all_pairs_shortest_paths(cluster_nodes, boundary_nodes, graph, approx_factor);
     }
-    
-    
-
-
     
 
     /*
