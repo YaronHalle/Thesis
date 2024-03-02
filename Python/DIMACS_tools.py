@@ -1,7 +1,9 @@
 import json
 import time
+from sklearn.cluster import AgglomerativeClustering
 from scipy.sparse import coo_matrix, csgraph
 from scipy.sparse.linalg import eigsh
+from scipy.sparse import coo_matrix
 from sklearn.cluster import SpectralClustering
 import matplotlib.pyplot as plt
 import os
@@ -10,6 +12,105 @@ import numpy as np
 
 def pareto_width(high_cost, low_cost):
     return (high_cost - low_cost) / low_cost
+
+def sparse_adjacency_matrix(edges_list):
+    rows = edges_list[:, 0].astype(int) - 1
+    columns = edges_list[:, 1].astype(int) - 1
+    return coo_matrix((edges_list[:, 2].astype(int), (rows, columns))).tocsr()
+
+def adjacency_matrix(vertices_count, edges_list):
+    adj_matrix = np.zeros((vertices_count, vertices_count))
+    for i in range(edges_list.shape[0]):
+        start_node = int(edges_list[i, 0])
+        end_node = int(edges_list[i, 1])
+        cost = int(edges_list[i, 2])
+        adj_matrix[start_node, end_node] = cost
+
+    return adj_matrix
+
+def generate_multiple_correlated_graph(distance_filename, time_filename, coords_filename,
+                                       clusters_count, new_distance_gr_filename, new_time_gr_filename, new_coords_filename,
+                                       clusters_metafile, min_lon=None, max_lon=None, min_lat=None, max_lat=None):
+    # Reading the graphs
+    c1_graph, vertices_count = load_graph(distance_filename)
+    c2_graph, _ = load_graph(time_filename)
+    edges_count = c1_graph.shape[0]
+    coordinates = read_coords_file(coords_filename)
+
+    # Computing the original correlation between the two cost functions
+    original_corr = pearson_correlation(c1_graph[:, 2], c2_graph[:, 2])
+
+    # Filtering only the desired area of interest
+    if min_lon is not None:
+        inside_nodes = np.array(np.where(
+            (coordinates[:, 0] >= min_lon) & (coordinates[:, 0] <= max_lon) &
+            (coordinates[:, 1] >= min_lat) & (coordinates[:, 1] <= max_lat)))
+
+        inside_nodes = inside_nodes.reshape(inside_nodes.shape[1])
+
+        coordinates = coordinates[inside_nodes, :]
+
+        inside_nodes += 1
+
+        valid_start_nodes = np.where(np.in1d(c1_graph[:, 0], inside_nodes))[0]
+        valid_end_nodes = np.where(np.in1d(c1_graph[:, 1], inside_nodes))[0]
+        intersection = np.intersect1d(valid_start_nodes, valid_end_nodes)
+        c1_graph = c1_graph[intersection, :]
+        c2_graph = c2_graph[intersection, :]
+
+        vertices_count = coordinates.shape[0]
+        edges_count = c1_graph.shape[0]
+        vertices_set = set(coordinates[:, 2])
+
+    # Computing the geographic east and north extent
+    east_width = max(coordinates[:, 0]) - min(coordinates[:, 0])
+    north_width = max(coordinates[:, 1]) - min(coordinates[:, 1])
+    sw_corner_east = min(coordinates[:, 0])
+    sw_corner_north = min(coordinates[:, 1])
+
+    clusters_center_x = sw_corner_east + np.random.uniform(0, 1, clusters_count) * east_width
+    clusters_center_y = sw_corner_north + np.random.uniform(0, 1, clusters_count) * north_width
+
+    clusters_radius = np.random.uniform(east_width / 30, east_width / 20, clusters_count)
+
+    updated_nodes = np.array([]).reshape(-1, 2)
+    clusters_correlation = 0
+    cluster_id = 0
+    for cluster_id in range(clusters_count):
+        print(f'Cluster {cluster_id + 1} / {clusters_count}...')
+        # Retrieving the list of nodes indices that reside inside the bounding circle
+        nodes = points_inside_circle(coordinates[:, 0:2], [clusters_center_x[cluster_id], clusters_center_y[cluster_id]],
+                                     clusters_radius[cluster_id])
+
+        # Keeping track of nodes to be updated
+        nodes_with_corr = np.hstack((nodes.reshape(-1, 1), np.ones((len(nodes), 1)) * clusters_correlation))
+        updated_nodes = np.concatenate((updated_nodes, nodes_with_corr))
+
+        # Updating the weight of all the edges that leave the desired nodes
+        edges_to_be_updated = np.array([])
+        for node in nodes:
+            edges_to_be_updated = np.concatenate((edges_to_be_updated, np.argwhere(c1_graph[:, 0] == node).flatten()))
+
+        if len(edges_to_be_updated) > 0:
+            distance_cost, time_cost = generate_correlated_vectors(len(edges_to_be_updated), target_correlation=clusters_correlation)
+            c1_graph[edges_to_be_updated.astype(int), 2] = distance_cost
+            c2_graph[edges_to_be_updated.astype(int), 2] = time_cost
+
+        vertices_set = vertices_set - set(coordinates[nodes, 2])
+
+    # Exporting new files
+    export_gr_file(c1_graph, vertices_count, edges_count, new_distance_gr_filename,
+                   'Distance graph for multiple correlated clusters')
+    export_gr_file(c2_graph, vertices_count, edges_count, new_time_gr_filename,
+                   'Time graph for multiple correlated clusters')
+    export_coords_file(coordinates, vertices_count, new_coords_filename,
+                       'Filtered NY coords file')
+
+    clusters_mapping = np.zeros((len(vertices_set), 2))
+    clusters_mapping[:, 0] = cluster_id
+    clusters_mapping[:, 1] = np.array(list(vertices_set)).astype(int)
+
+    export_clusters_file(clusters_mapping, clusters_metafile)
 
 def load_graph(filename):
     edge_ind = 0
@@ -81,55 +182,24 @@ def spectral_clustering(edge_list, num_clusters):
 
     return nodes, cluster_labels
 
-def graph_compress(distance_filename, time_filename, eps):
+def graph_agglomerative_clustering(distance_filename, time_filename, eps):
     c1_graph, vertices_count = load_graph(distance_filename)
     c2_graph, _ = load_graph(time_filename)
 
-    # Truncating the graph
-    n_edges = 1000
-    c1_graph = c1_graph[0:n_edges, :]
-    c2_graph = c2_graph[0:n_edges, :]
+    # c1_adj_mat = sparse_adjacency_matrix(c1_graph)
+    # c2_adj_mat = sparse_adjacency_matrix(c2_graph)
 
-    # Building adjacency matrix
-    N = c1_graph.shape[0]
-    adj_matrix = np.zeros((N, N))
-    for i in range(N):
-        start_node = int(c1_graph[i, 0])
-        end_node = int(c1_graph[i, 1])
-        cost = int(c1_graph[i, 2])
-        adj_matrix[start_node, end_node] = cost
+    # visited_vertices = np.zeros(vertices_count)
+    # vertices_to_test = np.arange(vertices_count)
 
-    t1 = time.time()
-    U, S, Vh = np.linalg.svd(adj_matrix, full_matrices=False)
-    t2 = time.time()
-    delta = t2-t1
-    print(delta)
-    '''
-    # Creating the ratio graph
-    mean_c1 = np.mean(c1_graph[:, 2])
-    mean_c2 = np.mean(c2_graph[:, 2])
-    ratio_graph = np.zeros(c1_graph.shape)
-    ratio_graph[:, 0:2] = c1_graph[:, 0:2]
-    ratio_graph[:, 2] = (c1_graph[:, 2] - mean_c1) / (c2_graph[:, 2] - mean_c2)
+    # current_cluster_id = 0
 
-    # Plotting
-    plt.hist(ratio_graph[:, 2], bins=1000, color='skyblue', edgecolor='black')
+    # while len(vertices_to_test) > 0:
+    #     vertex = vertices_to_test[0]
+    #     vertices_to_test = np.delete(vertices_to_test, 0)
 
-    # Adding labels and title
-    plt.xlabel('Values')
-    plt.ylabel('Frequency')
-    plt.title('Histogram Example')
-
-    # Display the plot
-    plt.show()
-
-    # Call Spectral Clustering
-    num_clusters = 2
-
-    # Perform spectral clustering
-    nodes, cluster_labels = spectral_clustering(ratio_graph, num_clusters)
-    '''
     print('Building graph for networkx...')
+    c1_graph = c1_graph[0:10000, :]
     G = nx.DiGraph()
     for i in range(c1_graph.shape[0]):
         start_node = int(c1_graph[i, 0])
@@ -138,11 +208,29 @@ def graph_compress(distance_filename, time_filename, eps):
         G.add_edge(start_node, end_node, weight=cost)
 
     print('Running Floyd-Warshall...')
+    t1 = time.time()
     result_matrix = nx.floyd_warshall(G)
+    t2 = time.time()
+    print(f'Floyd-Warshall took {t2-t1} [sec]')
 
-    print('done')
 
-def plot_graph(adjacency_filename, coords_filename):
+def read_coords_file(coords_filename):
+    # Reading the coords file
+    with open(coords_filename, "r") as f:
+        f.readline()
+        row_id = 0
+        for line in f:
+            if line[0] == 'p':
+                _, _, _, _, vertices_count = line.rstrip('\n').split(' ')
+                coordinates = np.zeros((int(vertices_count), 3))
+            if line[0] == 'v':
+                _, node, x, y = line.rstrip('\n').split(' ')
+                coordinates[row_id, :] = [int(x), int(y), int(node)]
+                row_id += 1
+
+    return coordinates
+
+def plot_graph(adjacency_filename, coords_filename, clusters_metafile=None):
     # Reading the adjacency graph structure
     edge_ind = 0
     with open(adjacency_filename, "r") as f:
@@ -163,21 +251,85 @@ def plot_graph(adjacency_filename, coords_filename):
                 edge_ind += 1
 
     # Reading the coords file
-    coordinates = {}
-    with open(coords_filename, "r") as f:
+    coordinates = read_coords_file(coords_filename)
+
+    # Reading the clusters metafile
+    correlated_nodes = np.array([])
+    if clusters_metafile is not None:
+        with open(clusters_metafile, "r") as f:
+            f.readline()
+            for line in f:
+                cluster_id, node = line.rstrip('\n').split(' ')
+                data = np.array([int(cluster_id), int(node)])
+                if correlated_nodes.size == 0:
+                    correlated_nodes = data
+                else:
+                    correlated_nodes = np.vstack((correlated_nodes, data))
+
+        # Retrieving the coordinates row corresponding to the clusters' nodes ids
+        ind = np.where(np.isin(coordinates[:, 2], correlated_nodes[:, 1]))
+        ind = np.array(ind[0])
+
+    marker_size = 1
+    plt.scatter(coordinates[:, 0], coordinates[:, 1], color='red', marker='.', s=marker_size, label='0 Correlation')
+    if clusters_metafile is not None:
+        plt.scatter(coordinates[ind, 0], coordinates[ind, 1],
+                    color='blue', marker='.', s=marker_size, label=f'0.96 Correlation')
+
+    # Plotting the boundary nodes
+    boundary_nodes_files = r'D:\Thesis\DIMCAS\NY_correlated\Multiple_Clusters\boundary_nodes.txt'
+    bnd_nodes_id = np.array([])
+    with open(boundary_nodes_files, "r") as f:
         f.readline()
         for line in f:
-            if line[0] == 'v':
-                _, node, x, y = line.rstrip('\n').split(' ')
-                coordinates[int(node)] = np.array([x,y]).astype(int)
+            node = line.rstrip('\n').split(' ')
+            if bnd_nodes_id.size == 0:
+                bnd_nodes_id = np.array(int(node[0]))
+            else:
+                bnd_nodes_id = np.vstack((bnd_nodes_id, int(node[0])))
 
-    coordinates_matrix = np.array(list(coordinates.values()))
-    plt.scatter(coordinates_matrix[:, 0], coordinates_matrix[:, 1], color='blue', marker='.', s=5)
+    # Retrieving the coordinates row corresponding to the clusters' nodes ids
+    bnd_ind = np.where(np.isin(coordinates[:, 2], bnd_nodes_id))
+    bnd_ind = np.array(bnd_ind[0])
+    plt.scatter(coordinates[bnd_ind, 0], coordinates[bnd_ind, 1],
+                color='green', marker='.', s=50, label='Boundary Nodes')
+
     plt.grid()
     plt.axis('equal')
     plt.xlabel('Longitude')
     plt.ylabel('Latitude')
+    plt.legend()
+    plt.title('NY DIMACS graph with multiple correlations regions', fontsize=14, fontweight='bold')
     plt.show()
+
+def export_gr_file(graph, vertices_count, edges_count, filename, header_string):
+    with open(filename, 'w') as file:
+        # Write header
+        file.write('c ' + header_string + '\n')
+
+        # Write problem line (optional)
+        file.write("p sp {} {}\n".format(vertices_count, edges_count))
+
+        # Write edge lines
+        for i in range(edges_count):
+            file.write("a {} {} {}\n".format(graph[i, 0].astype(int), graph[i, 1].astype(int), graph[i, 2].astype(int)))
+
+def export_coords_file(coordinates, vertices_count, new_coords_filename, header_string):
+    with open(new_coords_filename, 'w') as file:
+        # Write header
+        file.write('c ' + header_string + '\n')
+
+        # Write problem line (optional)
+        file.write("p aux sp co {}\n".format(vertices_count))
+
+        # Write nodes' coordinates
+        for i in range(vertices_count):
+            file.write("v {} {} {}\n".format(coordinates[i, 2].astype(int), coordinates[i, 0].astype(int), coordinates[i, 1].astype(int)))
+
+def export_clusters_file(clusters, filename):
+    with open(filename, 'w') as file:
+        for i in range(clusters.shape[0]):
+            file.write("{} {}\n".format(clusters[i, 0].astype(int), clusters[i, 1].astype(int)))
 
 def testbench_A(input_filename, output_dir, corr_vec, samples_per_corr, path2ApexExe):
     # Reading the input graph structure
@@ -293,11 +445,20 @@ def analyze_corr_vs_optimality_ratio(output_dir, correlations, samples):
             for i in range(n_solutions):
                 solutions[i, :] = log[0]['finish_info']['solutions'][i]['full_cost']
 
-            # Finding the best cost1 solution
+            # Computing the width in respect to the 1st cost function
+            best_cost2_sol_ind = np.argmin(solutions[:, 1])
+            cost1_at_best_cost2 = solutions[best_cost2_sol_ind, 0]
+            best_cost1 = min(solutions[:, 0])
+            needed_epsilon_cost1 = (cost1_at_best_cost2 - best_cost1) / best_cost1
+
+            # Computing the width in respect to the 2nd cost function
             best_cost1_sol_ind = np.argmin(solutions[:, 0])
             cost2_at_best_cost1 = solutions[best_cost1_sol_ind, 1]
             best_cost2 = min(solutions[:, 1])
-            needed_epsilon = (cost2_at_best_cost1 - best_cost2) / best_cost2
+            needed_epsilon_cost2 = (cost2_at_best_cost1 - best_cost2) / best_cost2
+
+            needed_epsilon = max([needed_epsilon_cost1, needed_epsilon_cost2])
+
             if needed_epsilon < 5:
                 results[corr] = np.append(results[corr], needed_epsilon)
 
@@ -335,9 +496,9 @@ def generate_correlated_vectors(size, target_correlation):
     # Transform the uncorrelated variables to be correlated
     correlated_variables = np.dot(cholesky_matrix, random_variables)
 
-    # Extract the correlated vectors
-    vector1 = correlated_variables[0, :]
-    vector2 = correlated_variables[1, :]
+    # Extract the correlated vectors, adding bias to avoid negative values
+    vector1 = correlated_variables[0, :] - min(correlated_variables[0, :])
+    vector2 = correlated_variables[1, :] - min(correlated_variables[1, :])
 
     return vector1, vector2
 
@@ -405,6 +566,66 @@ def plot_coords_graph(filename):
                 _, _, vertices_count_str, edges_count_str = line.rstrip('\n').split(' ')
                 vertices_count = int(vertices_count_str)
 '''
+
+def testbench_B(distance_filename, time_filename, output_dir, samples, path2ApexExe):
+    # Reading the input graph structure
+    edge_ind = 0
+    with open(distance_filename, "r") as f:
+        f.readline()
+        for line in f:
+            # Inputting the graph dimensions and allocating data structures
+            if line[0] == 'p':
+                _, _, vertices_count_str, edges_count_str = line.rstrip('\n').split(' ')
+                vertices_count = int(vertices_count_str)
+                edges_count = int(edges_count_str)
+                graph = np.zeros((edges_count, 3))
+                continue
+
+            # Inputting each edge data
+            if line[0] == 'a':
+                _, graph[edge_ind, 0], graph[edge_ind, 1], \
+                    _ = line.rstrip('\n').split(' ')
+                edge_ind += 1
+
+        # Performing multiple A*pex invocations for the same correlation
+        for i in range(samples):
+            print(f'Iteration {i}:')
+            ready = False
+            while not ready:
+                startNode = np.random.randint(min(graph[:, 0]), max(graph[:, 0]))
+                goalNode = np.random.randint(min(graph[:, 0]), max(graph[:, 0]))
+                ready = True
+                # if abs(startNode - goalNode) > vertices_count * 0.5:
+                #     ready = True
+            log_file = f'{output_dir}\log_iter_{i+1}.json'
+            command_line = f'{path2ApexExe}  -m {distance_filename} {time_filename} \
+                           -e 0 -s {startNode} -g {goalNode} -a Apex -o output.txt -l {log_file}'
+            os.system(command_line)
+
+            # Analyzing the Pareto-set width
+            with open(log_file, 'r') as file:
+                log = json.load(file)
+            n_solutions = log[0]['finish_info']['amount_of_solutions']
+            solutions = np.zeros((n_solutions, 2))
+            for i in range(n_solutions):
+                solutions[i, :] = log[0]['finish_info']['solutions'][i]['full_cost']
+
+            # Computing the width in respect to the 1st cost function
+            best_cost2_sol_ind = np.argmin(solutions[:, 1])
+            cost1_at_best_cost2 = solutions[best_cost2_sol_ind, 0]
+            best_cost1 = min(solutions[:, 0])
+            needed_epsilon_cost1 = (cost1_at_best_cost2 - best_cost1) / best_cost1
+
+            # Computing the width in respect to the 2nd cost function
+            best_cost1_sol_ind = np.argmin(solutions[:, 0])
+            cost2_at_best_cost1 = solutions[best_cost1_sol_ind, 1]
+            best_cost2 = min(solutions[:, 1])
+            needed_epsilon_cost2 = (cost2_at_best_cost1 - best_cost2) / best_cost2
+
+            needed_epsilon = max([needed_epsilon_cost1, needed_epsilon_cost2])
+            print('=========================================================================================')
+            print(f'-------------> Epsilons = ({round(needed_epsilon_cost1, 2)},{round(needed_epsilon_cost2, 2)}), Needed Epsilon is {round(needed_epsilon, 2)}')
+            print('=========================================================================================')
 
 class LogAnalysis(object):
     def __init__(self, filename):
