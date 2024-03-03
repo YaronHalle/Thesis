@@ -84,7 +84,7 @@ int main(int argc, char** argv)
         std::vector<int> boundary_nodes;
         get_boundary_nodes(boundary_nodes, graph, lookupTable);
 
-        //boundary_nodes.resize(100);
+        //boundary_nodes.resize(10);
 
         // DEBUG EXPORT TO FILE
         /*
@@ -116,8 +116,15 @@ int main(int argc, char** argv)
         //int bounary_nodes_count = boundary_nodes.size();
         //AllPairsCostsTensor costs(bounary_nodes_count);
 
-        
-        all_pairs_shortest_paths(cluster_nodes, boundary_nodes, graph, approx_factor);
+        std::vector<ContractedEdge> contractedEdges;
+        all_pairs_shortest_paths(cluster_nodes, boundary_nodes, graph, approx_factor, contractedEdges);
+        /*
+        for (auto edge : contractedEdges)
+        {
+            std::cout << "Source = " << edge.source << " Target = " << edge.target << " Costs = (" << edge.costs[0] << 
+                "," << edge.costs[1] << ")" << std::endl;
+        }
+        */
     }
     
 

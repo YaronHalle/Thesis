@@ -316,7 +316,8 @@ void reconstructPath_Dijkstra(int source, int target, std::vector<int> predecess
 }
 */
 
-bool is_path_contractable(CrossObjectiveCost crossCostsMat, std::vector<double> approx_factor)
+bool is_path_contractable(CrossObjectiveCost crossCostsMat, std::vector<double> approx_factor,
+                          int* contracting_obj_id)
 {
     double width;
     int n_objectives = approx_factor.size();
@@ -334,6 +335,7 @@ bool is_path_contractable(CrossObjectiveCost crossCostsMat, std::vector<double> 
                 {
                     // This condition needs to hold only once for the entire path to be contractable
                     return true;
+                    *contracting_obj_id = objective_id;
                 }
             }
         }
@@ -345,7 +347,8 @@ bool is_path_contractable(CrossObjectiveCost crossCostsMat, std::vector<double> 
 // All-Pairs Shortest-Paths solver based on Dijkstra algorithm O(VlogV + E)
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 bool all_pairs_shortest_paths(std::vector<int> cluster_nodes, std::vector<int> boundary_nodes,
-    AdjacencyMatrix entire_graph, std::vector<double> approx_factor)
+    AdjacencyMatrix entire_graph, std::vector<double> approx_factor, 
+    std::vector<ContractedEdge>& contractedEdges)
 {
     int cluster_nodes_count = cluster_nodes.size();
     int boundary_nodes_count = boundary_nodes.size();
@@ -440,6 +443,7 @@ bool all_pairs_shortest_paths(std::vector<int> cluster_nodes, std::vector<int> b
 
     std::vector<std::vector<double>> multi_objective_dist(objectives_count, std::vector<double>(cluster_nodes_count));
     std::vector<std::vector<int>> multi_objective_pred(objectives_count, std::vector<int>(cluster_nodes_count));
+    std::vector<std::vector<double>> cross_costs_cache(objectives_count, std::vector<double>(cluster_nodes_count, -1));
 
     int reachable_paths = 0;
     int contractable_paths = 0;
@@ -508,6 +512,15 @@ bool all_pairs_shortest_paths(std::vector<int> cluster_nodes, std::vector<int> b
                 }
             }
 
+            // Reseting the cross costs cache
+            for (int i = 0; i < cross_costs_cache.size(); i++)
+            {
+                for (int j = 0; j < cross_costs_cache[i].size(); j++)
+                {
+                    cross_costs_cache[i][j] = -1;
+                }
+            }
+            
             for (int objective_id = 0; objective_id < objectives_count; objective_id++)
             {
                 // Updating the optimal cost considering the current objective id
@@ -523,22 +536,32 @@ bool all_pairs_shortest_paths(std::vector<int> cluster_nodes, std::vector<int> b
                         reconstructPath_Dijkstra(source_id, target_id,
                             multi_objective_pred[objective_id], path, &path_length);
 
-                        //pathLengths[source][target] = path_length;
-
                         for (int i = (path_length - 1); i > 0; i--)
                         {
-                            int out_ind = cluster_nodes[path[i]];
-                            int in_ind = cluster_nodes[path[i - 1]];
-
-                            int adj_out = node_id_to_adj_mat_id[out_ind];
-                            int adj_in = node_id_to_adj_mat_id[in_ind];
-                            int edge_id = succesor_node_to_edge_id[adj_out][adj_in];
-                            if (edge_id < 0)
+                            if (cross_costs_cache[cross_obj_id][path[i]] >= 0)
                             {
-                                std::cout << "Warning! get_edge_id returned (-1)!" << std::endl;
+                                std::cout << "bad!!!\n";
+                                // The required value was already cached
+                                costs[objective_id][cross_obj_id] +=
+                                    cross_costs_cache[cross_obj_id][path[i]];
+                                break;
                             }
-                            costs[objective_id][cross_obj_id] +=
-                                entire_graph[out_ind][edge_id].cost[cross_obj_id];
+                            else
+                            {
+                                // No cache found. Computing path's cost and saving to cache
+                                int out_ind = cluster_nodes[path[i]];
+                                int in_ind = cluster_nodes[path[i - 1]];
+
+                                int adj_out = node_id_to_adj_mat_id[out_ind];
+                                int adj_in = node_id_to_adj_mat_id[in_ind];
+                                int edge_id = succesor_node_to_edge_id[adj_out][adj_in];
+                                if (edge_id < 0)
+                                {
+                                    std::cout << "Warning! get_edge_id returned (-1)!" << std::endl;
+                                }
+                                costs[objective_id][cross_obj_id] +=
+                                    entire_graph[out_ind][edge_id].cost[cross_obj_id];
+                            }
                         }
                     }
                 }
@@ -551,10 +574,20 @@ bool all_pairs_shortest_paths(std::vector<int> cluster_nodes, std::vector<int> b
             {
                 std::cout << "Invalid cross-costs matrix!" << std::endl;
             }
-            bool pathContractable = is_path_contractable(costs, approx_factor);
+            int contracting_obj_id;
+            bool pathContractable = is_path_contractable(costs, approx_factor, &contracting_obj_id);
             if (pathContractable)
             {
                 contractable_paths++;
+                ContractedEdge cntrctEdge;
+                cntrctEdge.source = boundary_nodes[source];
+                cntrctEdge.target = boundary_nodes[target];
+                cntrctEdge.costs.resize(objectives_count);
+                for (int objective_id = 0; objective_id < objectives_count; objective_id++)
+                {
+                    cntrctEdge.costs[objective_id] = costs[contracting_obj_id][objective_id];
+                }
+                contractedEdges.push_back(cntrctEdge);
             }
         }
     }
