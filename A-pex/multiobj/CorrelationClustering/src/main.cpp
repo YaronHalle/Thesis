@@ -73,7 +73,7 @@ int main(int argc, char** argv)
     // ==========================================================================
     // Computing all-pairs shortest-path between all boundary nodes
     // ==========================================================================
-    std::vector<double> approx_factor = { 0.1, 0.1 };
+    std::vector<double> approx_factor = { 0.01, 0.01 };
     for (int cluster_id = 0; cluster_id < clusters_map.size(); cluster_id++)
     {
         // Creating a lookup table of all nodes inside the cluster
@@ -84,7 +84,7 @@ int main(int argc, char** argv)
         std::vector<int> boundary_nodes;
         get_boundary_nodes(boundary_nodes, graph, lookupTable);
 
-        //boundary_nodes.resize(10);
+        //boundary_nodes.resize(500);
 
         // DEBUG EXPORT TO FILE
         /*
@@ -110,7 +110,7 @@ int main(int argc, char** argv)
         {
             boundary_nodes.push_back(node);
         }
-        boundary_nodes.resize(5000);
+        boundary_nodes.resize(500);
         */
 
         //int bounary_nodes_count = boundary_nodes.size();

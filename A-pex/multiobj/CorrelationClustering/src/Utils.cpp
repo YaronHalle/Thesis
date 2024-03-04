@@ -13,7 +13,7 @@
 #define GREEN "\033[32m"
 #define RESET "\033[0m"
 
-void updateProgressBar(int progress, int total) {
+void updateProgressBar(int progress, int total, double ratio) {
     const int barWidth = 50;
 
     std::cout << GREEN << "[";
@@ -26,7 +26,8 @@ void updateProgressBar(int progress, int total) {
         else
             std::cout << " ";
     }
-    std::cout << "] " << int(100.0 * progress / total) << " %\r" << RESET;
+    std::cout << "] " << int(100.0 * progress / total) << "%    Compression Ratio = " <<
+        ratio << "\r" << RESET;
     std::cout.flush();
 }
 
@@ -334,8 +335,8 @@ bool is_path_contractable(CrossObjectiveCost crossCostsMat, std::vector<double> 
                 if (width < approx_factor[objective_id])
                 {
                     // This condition needs to hold only once for the entire path to be contractable
-                    return true;
                     *contracting_obj_id = objective_id;
+                    return true;
                 }
             }
         }
@@ -448,14 +449,24 @@ bool all_pairs_shortest_paths(std::vector<int> cluster_nodes, std::vector<int> b
     int reachable_paths = 0;
     int contractable_paths = 0;
     double progress;
+    double compression_ratio;
     double last_progress = -1;
 
     for (int source = 0; source < boundary_nodes_count; ++source)
     {
+        // Progress status update
+        if (reachable_paths == 0)
+        {
+            compression_ratio = 0;
+        }
+        else
+        {
+            compression_ratio = (double)contractable_paths / reachable_paths;
+        }
         progress = (double)source / boundary_nodes_count;
         if(progress - last_progress > 0.01)
         { 
-            updateProgressBar(source, boundary_nodes_count);
+            updateProgressBar(source, boundary_nodes_count, compression_ratio);
             last_progress = progress;
         }
 
@@ -480,6 +491,14 @@ bool all_pairs_shortest_paths(std::vector<int> cluster_nodes, std::vector<int> b
             }
         }
 
+        // Reseting the cross costs cache
+        for (int i = 0; i < cross_costs_cache.size(); i++)
+        {
+            for (int j = 0; j < cross_costs_cache[i].size(); j++)
+            {
+                cross_costs_cache[i][j] = -1;
+            }
+        }
         // At this point, all shortest-paths starting from a given start node are computed for all objectives.
         // Iterating through all start->target (which are boundary) to check if edges can be contracted.
         for (int target = 0; target < boundary_nodes_count; target++)
@@ -512,15 +531,6 @@ bool all_pairs_shortest_paths(std::vector<int> cluster_nodes, std::vector<int> b
                 }
             }
 
-            // Reseting the cross costs cache
-            for (int i = 0; i < cross_costs_cache.size(); i++)
-            {
-                for (int j = 0; j < cross_costs_cache[i].size(); j++)
-                {
-                    cross_costs_cache[i][j] = -1;
-                }
-            }
-            
             for (int objective_id = 0; objective_id < objectives_count; objective_id++)
             {
                 // Updating the optimal cost considering the current objective id
@@ -535,15 +545,15 @@ bool all_pairs_shortest_paths(std::vector<int> cluster_nodes, std::vector<int> b
                         costs[objective_id][cross_obj_id] = 0;
                         reconstructPath_Dijkstra(source_id, target_id,
                             multi_objective_pred[objective_id], path, &path_length);
-
-                        for (int i = (path_length - 1); i > 0; i--)
+                        int i;
+                        // First element is the target, last element is the source
+                        for (i = 1; i < path_length; i++)
                         {
-                            if (cross_costs_cache[cross_obj_id][path[i]] >= 0)
+                            if (cross_costs_cache[cross_obj_id][path[i - 1]] >= 0)
                             {
-                                std::cout << "bad!!!\n";
-                                // The required value was already cached
+                                // Early termination since the required value is cached 
                                 costs[objective_id][cross_obj_id] +=
-                                    cross_costs_cache[cross_obj_id][path[i]];
+                                    cross_costs_cache[cross_obj_id][path[i - 1]];
                                 break;
                             }
                             else
@@ -563,6 +573,24 @@ bool all_pairs_shortest_paths(std::vector<int> cluster_nodes, std::vector<int> b
                                     entire_graph[out_ind][edge_id].cost[cross_obj_id];
                             }
                         }
+
+                        // Updating the cache if necessary
+                        i--;
+                        double cost_so_far = cross_costs_cache[cross_obj_id][path[i]];
+                        // if cost_so_far is negative, this is the first time this specific cache is updated, thus
+                        // reseting it to zero
+                        cost_so_far = cost_so_far < 0 ? 0 : cost_so_far;
+                        for (i; i > 0; i--)
+                        {
+                            int out_ind = cluster_nodes[path[i]];
+                            int in_ind = cluster_nodes[path[i - 1]];
+
+                            int adj_out = node_id_to_adj_mat_id[out_ind];
+                            int adj_in = node_id_to_adj_mat_id[in_ind];
+                            int edge_id = succesor_node_to_edge_id[adj_out][adj_in];
+                            cost_so_far += entire_graph[out_ind][edge_id].cost[cross_obj_id];
+                            cross_costs_cache[cross_obj_id][adj_in] = cost_so_far;
+                        }
                     }
                 }
             }
@@ -572,7 +600,7 @@ bool all_pairs_shortest_paths(std::vector<int> cluster_nodes, std::vector<int> b
             if (costs[0][0] > costs[1][0] ||
                 costs[1][1] > costs[0][1])
             {
-                std::cout << "Invalid cross-costs matrix!" << std::endl;
+                std::cout << "Warning! Invalid cross-costs matrix detected !" << std::endl;
             }
             int contracting_obj_id;
             bool pathContractable = is_path_contractable(costs, approx_factor, &contracting_obj_id);
@@ -594,10 +622,10 @@ bool all_pairs_shortest_paths(std::vector<int> cluster_nodes, std::vector<int> b
     
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> duration = end - start;
-    std::cout << "\r                                                                          \r";
+    std::cout << "\r                                                                                         \r";
     std::cout << "Done, Finished in " << duration.count() << " [sec]" << std::endl;
 
-    double compression_ratio = (double)contractable_paths / (double)reachable_paths;
+    compression_ratio = (double)contractable_paths / (double)reachable_paths;
     std::cout << "Reachable paths count = " << reachable_paths << std::endl;
     std::cout << "Contractable paths count = " << contractable_paths << " (Compression Ratio = " << compression_ratio << ")" << std::endl;
     
