@@ -567,6 +567,40 @@ def plot_coords_graph(filename):
                 vertices_count = int(vertices_count_str)
 '''
 
+def plot_path_length_vs_contractability(stats_file):
+    paths_count = -1
+    index = 0
+    with open(stats_file, "r") as f:
+        # f.readline()
+        for line in f:
+            if paths_count < 0:
+                paths_count = line.rstrip('\n')
+                paths_count = int(paths_count)
+                data = np.zeros((paths_count, 2))
+                continue
+
+            path_length, contracted = line.rstrip('\n').split(',')
+            path_length = int(path_length)
+            is_contracted = int(contracted)
+            data[index,0] = path_length
+            data[index, 1] = is_contracted
+            index += 1
+
+    success_percent = round(data[:, 1].sum() / data[:, 1].size * 100)
+    fail_percent = 100 - success_percent
+    not_contracted_arr = data[data[:, 1] == 0, 0]
+    contracted_arr = data[data[:, 1] == 1, 0]
+    bins_no = 100
+    plt.hist(not_contracted_arr, bins = bins_no, color='red', alpha=0.5, label=f'Fail {fail_percent}%', density=False)
+    plt.hist(contracted_arr,  bins = bins_no, color='lime', alpha=0.5, label=f'Success {success_percent}%', density=False)
+    plt.xlabel('Path Length')
+    plt.ylabel('Number of Paths')
+    plt.title(f'Edge Contractability vs. Path Length\nNumber of Paths = {data.shape[0]}', fontweight='bold')
+    plt.grid()
+    plt.legend()
+    plt.show()
+
+
 def testbench_B(distance_filename, time_filename, output_dir, samples, path2ApexExe):
     # Reading the input graph structure
     edge_ind = 0

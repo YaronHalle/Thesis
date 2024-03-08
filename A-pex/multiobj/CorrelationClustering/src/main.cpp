@@ -43,9 +43,9 @@ int main(int argc, char** argv)
     size_t graph_size;
     std::vector<Edge> edges;
 
-    cout << "Loading the following objective graphs:" << endl;
+    std::cout << "Loading the following objective graphs:" << endl;
     for (auto file : objective_files) {
-        cout << file << std::endl;
+        std::cout << file << std::endl;
     }
 
     if (load_gr_files(objective_files, edges, graph_size) == false) {
@@ -68,12 +68,12 @@ int main(int argc, char** argv)
     ClusterMapping clusters_map;
     load_clusters_mapping(vm["clusters"].as<std::string>(), clusters_map);
 
-    cout << "Number of clusters is: " << clusters_map.size() << std::endl;
+    std::cout << "Number of clusters is: " << clusters_map.size() << std::endl;
 
     // ==========================================================================
     // Computing all-pairs shortest-path between all boundary nodes
     // ==========================================================================
-    std::vector<double> approx_factor = { 0.01, 0.01 };
+    std::vector<double> approx_factor = { 0.05, 0.05 };
     for (int cluster_id = 0; cluster_id < clusters_map.size(); cluster_id++)
     {
         // Creating a lookup table of all nodes inside the cluster
@@ -110,34 +110,27 @@ int main(int argc, char** argv)
         {
             boundary_nodes.push_back(node);
         }
-        boundary_nodes.resize(500);
+        //boundary_nodes.resize(500);
         */
-
         //int bounary_nodes_count = boundary_nodes.size();
         //AllPairsCostsTensor costs(bounary_nodes_count);
 
         std::vector<ContractedEdge> contractedEdges;
-        all_pairs_shortest_paths(cluster_nodes, boundary_nodes, graph, approx_factor, contractedEdges);
-        /*
-        for (auto edge : contractedEdges)
-        {
-            std::cout << "Source = " << edge.source << " Target = " << edge.target << " Costs = (" << edge.costs[0] << 
-                "," << edge.costs[1] << ")" << std::endl;
-        }
-        */
-    }
-    
+        std::vector<std::vector<int>> stats;
+        all_pairs_shortest_paths(cluster_nodes, boundary_nodes, graph, approx_factor, contractedEdges, stats);
+       
+        // Exporting to file the new contracted edges and their weights
+        std::cout << "Exporting contracted edges to file ... ";
+        string edges_filename = "Contracted_Edges.csv";
+        export_contracted_edges(edges_filename, contractedEdges);
+        std::cout << "Done" << std::endl;
 
-    /*
-    // Code for displaying progress bar
-    int total = 100;
-    for (int i = 0; i <= total; ++i) {
-        updateProgressBar(i, total);
-        // Simulate some work
-        this_thread::sleep_for(chrono::milliseconds(50));
+        // Exporting statistics of edge contractability vs path length
+        std::cout << "Exporting contractability statistics to file ... ";
+        string stats_filename = "pathLength_vs_Contractability.csv";
+        export_contractability_vs_pathlength_stats(stats_filename, stats);
+        std::cout << "Done" << std::endl;
     }
-    cout << endl;
-    */
 
     return 0;
 }

@@ -4,6 +4,7 @@
 #include <utility>
 #include <limits>
 #include <chrono>
+#include <string>
 #include <boost/graph/adjacency_list.hpp>
 #include <boost/graph/dijkstra_shortest_paths.hpp>
 
@@ -344,16 +345,73 @@ bool is_path_contractable(CrossObjectiveCost crossCostsMat, std::vector<double> 
     return false;
 }
 
+bool export_contracted_edges(std::string filename, std::vector<ContractedEdge> contractedEdges)
+{
+    std::ofstream file(filename);
+    int n_objectives = contractedEdges[0].costs.size();
+
+    if (file.is_open())
+    {
+        file << contractedEdges.size() << "\n";
+        for (auto edge : contractedEdges) 
+        {
+            file << edge.source << "," << edge.target << ",";
+            for (int obj_id = 0; obj_id < n_objectives; obj_id++)
+            {
+                file << edge.costs[obj_id];
+                if (obj_id + 1 < n_objectives)
+                {
+                    file << ",";
+                }
+                else
+                {
+                    file << std::endl;
+                }
+            }
+        }
+        file.close();
+    }
+    else 
+    {
+        std::cerr << "Unable to open file: " << filename << std::endl;
+        return false;
+    }
+
+    return true;
+}
+
+bool export_contractability_vs_pathlength_stats(std::string filename, std::vector<std::vector<int>> stats)
+{
+    std::ofstream file(filename);
+
+    if (file.is_open())
+    {
+        file << stats.size() << "\n";
+        for (const auto& pair : stats) 
+        {
+            file << pair[0] << "," << pair[1] << "\n";
+        }
+        file.close();
+    }
+    else 
+    {
+        std::cerr << "Unable to open file: " << filename << std::endl;
+        return false;
+    }
+
+    return true;
+}
+
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // All-Pairs Shortest-Paths solver based on Dijkstra algorithm O(VlogV + E)
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 bool all_pairs_shortest_paths(std::vector<int> cluster_nodes, std::vector<int> boundary_nodes,
     AdjacencyMatrix entire_graph, std::vector<double> approx_factor, 
-    std::vector<ContractedEdge>& contractedEdges)
-{
+    std::vector<ContractedEdge>& contractedEdges, std::vector<std::vector<int>>& stats)
+{   
     int cluster_nodes_count = cluster_nodes.size();
     int boundary_nodes_count = boundary_nodes.size();
-    int objectives_count = entire_graph.get_num_of_objectives();
+    int objectives_count = entire_graph.get_num_of_objectives();    
 
     std::cout << "Invokg all-pairs shortest-path for " << boundary_nodes_count << " boundary nodes..." << std::endl;
 
@@ -604,6 +662,11 @@ bool all_pairs_shortest_paths(std::vector<int> cluster_nodes, std::vector<int> b
             }
             int contracting_obj_id;
             bool pathContractable = is_path_contractable(costs, approx_factor, &contracting_obj_id);
+
+            // debug
+            std::vector<int> data = { path_length, (int)pathContractable };
+            stats.push_back(data);
+
             if (pathContractable)
             {
                 contractable_paths++;

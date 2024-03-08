@@ -50,6 +50,9 @@ bool load_clusters_mapping(std::string filename, ClusterMapping& clusters_map);
 bool build_lookup_table(std::unordered_set<int>& lut, std::vector<int> cluster_nodes);
 bool get_boundary_nodes(std::vector<int>& boundary_nodes, AdjacencyMatrix graph, const std::unordered_set<int>lookupTable);
 bool all_pairs_shortest_paths(std::vector<int> cluster_nodes, std::vector<int> boundary_nodes,
-    AdjacencyMatrix graph, std::vector<double> approx_factor, std::vector<ContractedEdge>& contractedEdges);
+    AdjacencyMatrix graph, std::vector<double> approx_factor, 
+    std::vector<ContractedEdge>& contractedEdges, std::vector<std::vector<int>>& stats);
 int get_edge_id(int source, int target, AdjacencyMatrix graph);
 bool normalize_edge_costs(std::vector<Edge>& edges);
+bool export_contractability_vs_pathlength_stats(std::string filename, std::vector<std::vector<int>> stats);
+bool export_contracted_edges(std::string filename, std::vector<ContractedEdge> contractedEdges);

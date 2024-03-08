@@ -12,6 +12,12 @@ if __name__ == '__main__':
     #     fix_json_file(directory + '\\' + filename)
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # Plot path length vs contractability histogram
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    stats_file = r'D:\Thesis\A-pex\multiobj\CorrelationClustering\pathLength_vs_Contractability.csv'
+    plot_path_length_vs_contractability(stats_file)
+
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     # Plotting
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     # la = LogAnalysis(r'D:\Thesis\DIMCAS\NY_correlated\log_corr_0_iter_7.json')
@@ -48,7 +54,7 @@ if __name__ == '__main__':
     samples = 1000
     distance_filename = r'D:\Thesis\DIMCAS\NY\USA-road-d.NY.gr'
     time_filename = r'D:\Thesis\DIMCAS\NY\USA-road-t.NY.gr'
-    testbench_B(distance_filename, time_filename, output_dir, samples, path2ApexExe)
+    # testbench_B(distance_filename, time_filename, output_dir, samples, path2ApexExe)
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     # Generating a multi-correlated graph
@@ -70,16 +76,16 @@ if __name__ == '__main__':
     # max_lat = 4.08e7
     # min_lon = -7.41e7
     # max_lon = -7.36e7
-    generate_multiple_correlated_graph(distance_filename, time_filename, coords_filename,
-                                       clusters_count, new_distance_gr_filename,
-                                       new_time_gr_filename, new_coords_filename, clusters_metafile,
-                                       min_lon, max_lon, min_lat, max_lat)
+    # generate_multiple_correlated_graph(distance_filename, time_filename, coords_filename,
+    #                                    clusters_count, new_distance_gr_filename,
+    #                                    new_time_gr_filename, new_coords_filename, clusters_metafile,
+    #                                    min_lon, max_lon, min_lat, max_lat)
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     # Plotting the graph
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     # plot_graph(gr_filename, coords_filename, clusters_metafile)
-    plot_graph(new_distance_gr_filename, new_coords_filename, clusters_metafile)
+    # plot_graph(new_distance_gr_filename, new_coords_filename, clusters_metafile)
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     # Graph Clustering
