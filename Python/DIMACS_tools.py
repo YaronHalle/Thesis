@@ -277,22 +277,16 @@ def plot_graph(adjacency_filename, coords_filename, clusters_metafile=None):
                     color='blue', marker='.', s=marker_size, label=f'0.96 Correlation')
 
     # Plotting the boundary nodes
-    boundary_nodes_files = r'D:\Thesis\DIMCAS\NY_correlated\Multiple_Clusters\boundary_nodes.txt'
-    bnd_nodes_id = np.array([])
-    with open(boundary_nodes_files, "r") as f:
-        f.readline()
-        for line in f:
-            node = line.rstrip('\n').split(' ')
-            if bnd_nodes_id.size == 0:
-                bnd_nodes_id = np.array(int(node[0]))
-            else:
-                bnd_nodes_id = np.vstack((bnd_nodes_id, int(node[0])))
+    plot_boundary_nodes = False
+    if plot_boundary_nodes:
+        boundary_nodes_file = r'D:\Thesis\DIMCAS\NY_correlated\Multiple_Clusters\boundary_nodes.txt'
+        bnd_nodes_id = read_boundary_nodes(boundary_nodes_file)
 
-    # Retrieving the coordinates row corresponding to the clusters' nodes ids
-    bnd_ind = np.where(np.isin(coordinates[:, 2], bnd_nodes_id))
-    bnd_ind = np.array(bnd_ind[0])
-    plt.scatter(coordinates[bnd_ind, 0], coordinates[bnd_ind, 1],
-                color='green', marker='.', s=50, label='Boundary Nodes')
+        # Retrieving the coordinates row corresponding to the clusters' nodes ids
+        bnd_ind = np.where(np.isin(coordinates[:, 2], bnd_nodes_id))
+        bnd_ind = np.array(bnd_ind[0])
+        plt.scatter(coordinates[bnd_ind, 0], coordinates[bnd_ind, 1],
+                    color='green', marker='.', s=50, label='Boundary Nodes')
 
     plt.grid()
     plt.axis('equal')
@@ -301,6 +295,20 @@ def plot_graph(adjacency_filename, coords_filename, clusters_metafile=None):
     plt.legend()
     plt.title('NY DIMACS graph with multiple correlations regions', fontsize=14, fontweight='bold')
     plt.show()
+
+
+def read_boundary_nodes(boundary_nodes_file):
+    bnd_nodes_id = np.array([])
+    with open(boundary_nodes_file, "r") as f:
+        for line in f:
+            node = line.rstrip('\n').split(' ')
+            if bnd_nodes_id.size == 0:
+                bnd_nodes_id = np.array(int(node[0]))
+            else:
+                bnd_nodes_id = np.vstack((bnd_nodes_id, int(node[0])))
+
+    return bnd_nodes_id
+
 
 def export_gr_file(graph, vertices_count, edges_count, filename, header_string):
     with open(filename, 'w') as file:
@@ -660,6 +668,377 @@ def testbench_B(distance_filename, time_filename, output_dir, samples, path2Apex
             print('=========================================================================================')
             print(f'-------------> Epsilons = ({round(needed_epsilon_cost1, 2)},{round(needed_epsilon_cost2, 2)}), Needed Epsilon is {round(needed_epsilon, 2)}')
             print('=========================================================================================')
+
+
+def read_cluster_nodes(clusters_metafile):
+    cluster_nodes_id = np.array([])
+    with open(clusters_metafile, "r") as f:
+        for line in f:
+            _, node = line.rstrip('\n').split(' ')
+            if cluster_nodes_id.size == 0:
+                cluster_nodes_id = np.array(int(node))
+            else:
+                cluster_nodes_id = np.vstack((cluster_nodes_id, int(node)))
+
+    return cluster_nodes_id
+
+def testbench_D(distance_filename, time_filename, cntrcted_distance_filename, cntrcted_time_filename,
+                coords_filename, clusters_metafile, output_dir, samples, path2ApexExe, epsilon):
+    # Reading the graphs
+    c1_graph, vertices_count = load_graph(distance_filename)
+    c2_graph, _ = load_graph(time_filename)
+    edges_count = c1_graph.shape[0]
+    coordinates = read_coords_file(coords_filename)
+    cluster_nodes_id = read_cluster_nodes(clusters_metafile)
+    non_cluster_nodes_ids = np.setdiff1d(coordinates[:, 2], cluster_nodes_id)
+
+    # Performing multiple A*pex invocations for the same correlation
+    for i in range(samples):
+        print(f'Iteration {i}:')
+        ready = False
+        while not ready:
+            startNode = int(np.random.choice(non_cluster_nodes_ids))
+            goalNode  = int(np.random.choice(non_cluster_nodes_ids))
+            start_crdnts_id = np.argwhere(coordinates[:, 2] == startNode)
+            goal_crdnts_id = np.argwhere(coordinates[:, 2] == goalNode)
+            if np.linalg.norm(coordinates[start_crdnts_id, 0:2]-coordinates[goal_crdnts_id, 0:2]) > 4e5:
+                # debug
+                print(f'Start = ({coordinates[start_crdnts_id, 0]},{coordinates[start_crdnts_id, 1]})')
+                print(f'Goal = ({coordinates[goal_crdnts_id, 0]},{coordinates[goal_crdnts_id, 1]})')
+                ready = True
+
+        # A*pex invocation WITHOUT edge contraction
+        print('============ WITHOUT CONTRACTION ============')
+        log_file = f'{output_dir}\log_without_contraction_iter_{i + 1}.json'
+        command_line = f'{path2ApexExe}  -m {distance_filename} {time_filename} \
+                               -e {epsilon} -h 0 -s {startNode} -g {goalNode} -a Apex -o output.txt -l {log_file}'
+        os.system(command_line)
+
+        # A*pex invocation WITH edge contraction
+        print('============ WITH CONTRACTION ============')
+        log_file = f'{output_dir}\log_with_contraction_iter_{i + 1}.json'
+        command_line = f'{path2ApexExe}  -m {cntrcted_distance_filename} {cntrcted_time_filename} \
+                                       -e {epsilon} -h 0 -s {startNode} -g {goalNode} -a Apex -o output.txt -l {log_file}'
+        os.system(command_line)
+
+def testbench_E(distance_filename, time_filename, coords_filename, output_dir, samples, path2ApexExe, epsilon):
+    # Reading the graphs
+    c1_graph, vertices_count = load_graph(distance_filename)
+    c2_graph, _ = load_graph(time_filename)
+    edges_count = c1_graph.shape[0]
+    coordinates = read_coords_file(coords_filename)
+
+    # Performing multiple A*pex invocations for the same correlation
+    for i in range(samples):
+        print(f'Iteration {i}:')
+        ready = False
+        while not ready:
+            startNode = int(np.random.choice(coordinates[:, 2]))
+            goalNode  = int(np.random.choice(coordinates[:, 2]))
+            start_crdnts_id = np.argwhere(coordinates[:, 2] == startNode)
+            goal_crdnts_id = np.argwhere(coordinates[:, 2] == goalNode)
+            if np.linalg.norm(coordinates[start_crdnts_id, 0:2]-coordinates[goal_crdnts_id, 0:2]) > 1e5:
+                # debug
+                print(f'Start = ({coordinates[start_crdnts_id, 0]},{coordinates[start_crdnts_id, 1]})')
+                print(f'Goal = ({coordinates[goal_crdnts_id, 0]},{coordinates[goal_crdnts_id, 1]})')
+                ready = True
+
+        # A*pex invocation WITHOUT epsilon and WITHOUT heuristics inflation
+        print('============ A ============')
+        log_file = f'{output_dir}\log_A_iter_{i + 1}.json'
+        command_line = f'{path2ApexExe}  -m {distance_filename} {time_filename} \
+                       -e 0 -h 0 -s {startNode} -g {goalNode} -a Apex -o output.txt -l {log_file}'
+        os.system(command_line)
+
+        # A*pex invocation WITH epsilon and WITHOUT heuristics inflation
+        print('============ B ============')
+        log_file = f'{output_dir}\log_B_iter_{i+1}.json'
+        command_line = f'{path2ApexExe}  -m {distance_filename} {time_filename} \
+                       -e {epsilon} -h 0 -s {startNode} -g {goalNode} -a Apex -o output.txt -l {log_file}'
+        os.system(command_line)
+
+        # A*pex invocation WITH epsilon and WITH heuristics inflation
+        print('============ C ============')
+        log_file = f'{output_dir}\log_C_iter_{i + 1}.json'
+        command_line = f'{path2ApexExe}  -m {distance_filename} {time_filename} \
+                               -e {epsilon} -h 1 -s {startNode} -g {goalNode} -a Apex -o output.txt -l {log_file}'
+        os.system(command_line)
+
+def testbench_F(distance_filename, time_filename, coords_filename, output_dir, samples, path2ApexExe):
+    # Reading the graphs
+    c1_graph, vertices_count = load_graph(distance_filename)
+    c2_graph, _ = load_graph(time_filename)
+    coordinates = read_coords_file(coords_filename)
+
+    # Performing multiple A*pex invocations for the same correlation
+    for i in range(samples):
+        print(f'Iteration {i}:')
+        ready = False
+        while not ready:
+            startNode = int(np.random.choice(coordinates[:, 2]))
+            goalNode  = int(np.random.choice(coordinates[:, 2]))
+            start_crdnts_id = np.argwhere(coordinates[:, 2] == startNode)
+            goal_crdnts_id = np.argwhere(coordinates[:, 2] == goalNode)
+            if np.linalg.norm(coordinates[start_crdnts_id, 0:2]-coordinates[goal_crdnts_id, 0:2]) > 1e5:
+                # debug
+                print(f'Start = ({coordinates[start_crdnts_id, 0]},{coordinates[start_crdnts_id, 1]})')
+                print(f'Goal = ({coordinates[goal_crdnts_id, 0]},{coordinates[goal_crdnts_id, 1]})')
+                ready = True
+
+        log_file_orig = f'{output_dir}\log_original_iter_{i + 1}.json'
+        command_line = f'{path2ApexExe}  -m {distance_filename} {time_filename} \
+                       -e 0 -h 0 -s {startNode} -g {goalNode} -a Apex -o output.txt -l {log_file_orig}'
+        os.system(command_line)
+
+        log_file_inf = f'{output_dir}\log_inflated_iter_{i+1}.json'
+        command_line = f'{path2ApexExe}  -m {distance_filename} {time_filename} \
+                       -e 0 -h 1 -s {startNode} -g {goalNode} -a Apex -o output.txt -l {log_file_inf}'
+        os.system(command_line)
+
+        log_file_inf = f'{output_dir}\log_apex_iter_{i + 1}.json'
+        command_line = f'{path2ApexExe}  -m {distance_filename} {time_filename} \
+                               -e 0.01 -h 0 -s {startNode} -g {goalNode} -a Apex -o output.txt -l {log_file_inf}'
+        os.system(command_line)
+
+        # Reading original results
+        try:
+            with open(log_file_orig, 'r') as file:
+                log = json.load(file)
+            n_solutions = log[0]['finish_info']['amount_of_solutions']
+            A_solutions = np.zeros((n_solutions, 2))
+            for i in range(n_solutions):
+                A_solutions[i, :] = log[0]['finish_info']['solutions'][i]['full_cost']
+
+            # Reading inflated results
+            with open(log_file_inf, 'r') as file:
+                log = json.load(file)
+            n_solutions = log[0]['finish_info']['amount_of_solutions']
+            B_solutions = np.zeros((n_solutions, 2))
+            for i in range(n_solutions):
+                B_solutions[i, :] = log[0]['finish_info']['solutions'][i]['full_cost']
+        except:
+            continue
+        else:
+            A_eps_dominates_by_B = is_approx_pareto_set_bound_true_pareto_set(B_solutions, A_solutions, 0.01)
+
+            if not A_eps_dominates_by_B:
+                print('PROBLEM!')
+                return
+
+def analyze_testbench_F(output_dir, samples):
+    runtime_res = np.zeros((samples, 2))
+    expansions_res = np.zeros((samples, 2))
+    generations_res = np.zeros((samples, 2))
+
+    for sample in range(1, samples + 1):
+        # Reading the JSON of without contraction
+        log_file = f'{output_dir}\log_apex_iter_{sample}.json'
+        with open(log_file, 'r') as file:
+            log = json.load(file)
+        expansions_res[sample - 1, 0] = log[0]['finish_info']['number_of_expansions']
+        generations_res[sample - 1, 0] = log[0]['finish_info']['number_of_generations']
+        runtime_res[sample - 1, 0] = log[0]['total_runtime(ms)']
+
+        # Reading the JSON of with contraction
+        log_file = f'{output_dir}\log_inflated_iter_{sample}.json'
+        with open(log_file, 'r') as file:
+            log = json.load(file)
+        expansions_res[sample - 1, 1] = log[0]['finish_info']['number_of_expansions']
+        generations_res[sample - 1, 1] = log[0]['finish_info']['number_of_generations']
+        runtime_res[sample - 1, 1] = log[0]['total_runtime(ms)']
+
+    plt.figure()
+    nbins = 100
+    plt.hist((expansions_res[:, 1] - expansions_res[:, 0]) / expansions_res[:, 0] * 100, bins=nbins)
+    plt.xlabel('% Difference of states expansions count (Inflated - A*pex)')
+    plt.ylabel('Count')
+    plt.title(f'State Expansions Difference Histogram, samples count = {samples}')
+    plt.grid()
+
+    plt.figure()
+    plt.hist((generations_res[:, 1] - generations_res[:, 0]) / generations_res[:, 0] * 100, bins=nbins)
+    plt.xlabel('% Difference of generations count (Inflated - A*pex)')
+    plt.ylabel('Count')
+    plt.title(f'Generations Difference Histogram, samples count = {samples}')
+    plt.grid()
+
+    plt.figure()
+    plt.hist(runtime_res[:, 1] - runtime_res[:, 0], bins=nbins)
+    plt.xlabel('Difference of runtime (Inflated - A*pex) [ms]')
+    plt.ylabel('Count')
+    plt.title(f'Runtime Difference Histogram, samples count = {samples}')
+    plt.grid()
+
+    plt.show()
+
+
+def analyze_apex_performance(output_dir, samples):
+    runtime_res = np.zeros((samples, 2))
+    expansions_res = np.zeros((samples, 2))
+    generations_res = np.zeros((samples, 2))
+    for sample in range(1, samples + 1):
+        # Reading the JSON of without contraction
+        log_file = f'{output_dir}\log_without_contraction_iter_{sample}.json'
+        with open(log_file, 'r') as file:
+            log = json.load(file)
+        expansions_res[sample - 1, 0] = log[0]['finish_info']['number_of_expansions']
+        generations_res[sample - 1, 0] = log[0]['finish_info']['number_of_generations']
+        runtime_res[sample -1, 0] = log[0]['total_runtime(ms)']
+
+        # Reading the JSON of with contraction
+        log_file = f'{output_dir}\log_with_contraction_iter_{sample}.json'
+        with open(log_file, 'r') as file:
+            log = json.load(file)
+        expansions_res[sample - 1, 1] = log[0]['finish_info']['number_of_expansions']
+        generations_res[sample - 1, 1] = log[0]['finish_info']['number_of_generations']
+        runtime_res[sample - 1, 1] = log[0]['total_runtime(ms)']
+
+    # a = np.argmax(generations_res[:, 1])
+    # b = np.argmax(runtime_res[:, 1])
+
+    plt.figure()
+    nbins = 100
+    plt.hist((expansions_res[:, 1] - expansions_res[:, 0]) / expansions_res[:, 0] * 100, bins= nbins)
+    plt.xlabel('% Difference of states expansions count (Augmented - Original)')
+    plt.ylabel('Count')
+    plt.title(f'State Expansions Difference Histogram, samples count = {samples}')
+    plt.grid()
+
+    plt.figure()
+    plt.hist((generations_res[:, 1] - generations_res[:, 0]) / generations_res[:, 0] * 100, bins=nbins)
+    plt.xlabel('% Difference of generations_res count (Augmented - Original)')
+    plt.ylabel('Count')
+    plt.title(f'generations_res Difference Histogram, samples count = {samples}')
+    plt.grid()
+
+    plt.figure()
+    plt.hist(runtime_res[:, 1] - runtime_res[:, 0], bins= nbins)
+    plt.xlabel('Difference of runtime (Augmented - Original) [ms]')
+    plt.ylabel('Count')
+    plt.title(f'Runtime Difference Histogram, samples count = {samples}')
+    plt.grid()
+
+    plt.show()
+
+def analyze_heuristics_inflation(output_dir, samples, epsilon):
+    runtime_res = np.zeros((samples, 3))
+    expansions_res = np.zeros((samples, 3))
+    for sample in range(1, samples + 1):
+
+        try:
+            # Reading log of no epsilon and no heuristics inflation (baseline)
+            log_file = f'{output_dir}\log_A_iter_{sample}.json'
+            with open(log_file, 'r') as file:
+                log = json.load(file)
+            expansions_res[sample - 1, 0] = log[0]['finish_info']['number_of_expansions']
+            runtime_res[sample - 1, 0] = log[0]['total_runtime(ms)']
+            n_solutions = log[0]['finish_info']['amount_of_solutions']
+            A_solutions = np.zeros((n_solutions, 2))
+            for i in range(n_solutions):
+                A_solutions[i, :] = log[0]['finish_info']['solutions'][i]['full_cost']
+
+            # Reading log of with epsilon and no heuristics inflation
+            log_file = f'{output_dir}\log_B_iter_{sample}.json'
+            with open(log_file, 'r') as file:
+                log = json.load(file)
+            expansions_res[sample - 1, 1] = log[0]['finish_info']['number_of_expansions']
+            runtime_res[sample - 1, 1] = log[0]['total_runtime(ms)']
+            n_solutions = log[0]['finish_info']['amount_of_solutions']
+            B_solutions = np.zeros((n_solutions, 2))
+            for i in range(n_solutions):
+                B_solutions[i, :] = log[0]['finish_info']['solutions'][i]['full_cost']
+
+            # Reading log of with epsilon and with heuristics inflation
+            log_file = f'{output_dir}\log_C_iter_{sample}.json'
+            with open(log_file, 'r') as file:
+                log = json.load(file)
+            expansions_res[sample - 1, 2] = log[0]['finish_info']['number_of_expansions']
+            runtime_res[sample - 1, 2] = log[0]['total_runtime(ms)']
+            n_solutions = log[0]['finish_info']['amount_of_solutions']
+            C_solutions = np.zeros((n_solutions, 2))
+            for i in range(n_solutions):
+                C_solutions[i, :] = log[0]['finish_info']['solutions'][i]['full_cost']
+        except:
+            continue
+        else:
+            print(f'Processing sample {sample}')
+            # Asserting that A is epsilon-dominated by B
+            A_eps_dominates_by_B = is_approx_pareto_set_bound_true_pareto_set(B_solutions, A_solutions, epsilon)
+
+            if not A_eps_dominates_by_B:
+                print('Problem at file ', log_file)
+                return
+
+            # Asserting that A is epsilon-dominated by C
+            A_eps_dominates_by_C = is_approx_pareto_set_bound_true_pareto_set(C_solutions, A_solutions, epsilon)
+            print(A_eps_dominates_by_C)
+
+def is_approx_pareto_set_bound_true_pareto_set(approx_set, precise_set, eps):
+    for real_sol in precise_set:
+        is_eps_dominated = False
+        for approx_sol in approx_set:
+            if approx_sol[0] <= (1+eps) * real_sol[0] and approx_sol[1] <= (1 + eps) * real_sol[1]:
+                is_eps_dominated = True
+                break
+        if not is_eps_dominated:
+            return False
+
+    return True
+
+def add_contracted_edges_to_graphs(original_distance_filename, original_time_filename,
+                                   new_distance_filename, new_time_filename,
+                                   contracted_edges_file, augmentation_ratio= 1):
+    # Load original graphs
+    c1_graph, vertices_count = load_graph(original_distance_filename)
+    c2_graph, _ = load_graph(original_time_filename)
+    edges_count = c1_graph.shape[0]
+    contracted_edges_count = -1
+    edge_ind = -1
+    first_cntrcted_edge_id = edges_count
+
+    # Reading the contracted edges data
+    with open(contracted_edges_file, "r") as f:
+        for line in f:
+            if contracted_edges_count < 0:
+                # Inputting the graph dimensions and allocating data structures
+                contracted_edges_count = line.rstrip('\n')
+                contracted_edges_count = int(contracted_edges_count)
+                new_c1_graph = np.zeros((edges_count + contracted_edges_count, 3))
+                new_c2_graph = np.zeros((edges_count + contracted_edges_count, 3))
+                new_c1_graph[0:edges_count, :] = c1_graph
+                new_c2_graph[0:edges_count, :] = c2_graph
+                edge_ind = edges_count
+                edges_count += contracted_edges_count
+                continue
+
+            # Adding the contracted edge to distance and time graphs
+            start_node, target_node, cost1, cost2  = line.rstrip('\n').split(',')
+            new_c1_graph[edge_ind ,0] = int(start_node)
+            new_c1_graph[edge_ind, 1] = int(target_node)
+            new_c1_graph[edge_ind, 2] = int(cost1)
+
+            new_c2_graph[edge_ind, 0] = int(start_node)
+            new_c2_graph[edge_ind, 1] = int(target_node)
+            new_c2_graph[edge_ind, 2] = int(cost2)
+
+            edge_ind += 1
+
+    # Diluting the number of augmented edges if necessary
+    if augmentation_ratio < 1:
+        cntrcted_edges_to_add = round(contracted_edges_count * augmentation_ratio)
+        cntrcted_edges_ids = np.random.choice(np.arange(first_cntrcted_edge_id, edges_count),
+                                              size=cntrcted_edges_to_add, replace=False)
+        regular_edges_ids = np.arange(0, first_cntrcted_edge_id)
+        indices = np.hstack((regular_edges_ids, cntrcted_edges_ids))
+        new_c1_graph = new_c1_graph[indices, :]
+        new_c2_graph = new_c2_graph[indices, :]
+        edges_count = len(indices)
+
+    # Writing new graph files (augmented with contracted edges)
+    export_gr_file(new_c1_graph, vertices_count, edges_count, new_distance_filename,
+                   'Distance graph augmented with contracted edges')
+    export_gr_file(new_c2_graph, vertices_count, edges_count, new_time_filename,
+                   'Time graph for augmented with contracted edges')
 
 class LogAnalysis(object):
     def __init__(self, filename):

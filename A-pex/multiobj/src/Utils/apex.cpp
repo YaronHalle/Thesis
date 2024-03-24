@@ -65,8 +65,12 @@ ApexPathPair::ApexPathPair(const ApexPathPairPtr parent, const Edge&  edge): h(p
     new_g[i] += edge.cost[i];
   }
   auto new_h = h(next_id);
-  this->apex = std::make_shared<Node>(next_id, new_apex_g, new_h);
-  this->path_node = std::make_shared<Node>(next_id, new_g, new_h);
+  
+  //this->apex = std::make_shared<Node>(next_id, new_apex_g, new_h);
+  //this->path_node = std::make_shared<Node>(next_id, new_g, new_h);
+  // 21-03-2024 Yaron : Adding the parent reference
+  this->apex = std::make_shared<Node>(next_id, new_apex_g, new_h, parent->path_node);
+  this->path_node = std::make_shared<Node>(next_id, new_g, new_h, parent->path_node);
 }
 
 
@@ -76,7 +80,9 @@ bool ApexPathPair::update_nodes_by_merge_if_bounded(const ApexPathPairPtr &other
     return false;
   }
 
-  NodePtr new_apex = std::make_shared<Node>(this->apex->id, this->apex->g, this->apex->h);
+  //NodePtr new_apex = std::make_shared<Node>(this->apex->id, this->apex->g, this->apex->h);
+  // Yaron 21-03-2024 : Adding the parent reference
+  NodePtr new_apex = std::make_shared<Node>(this->apex->id, this->apex->g, this->apex->h, this->path_node->parent);
   NodePtr new_path_node = nullptr;
 
   // Merge apex

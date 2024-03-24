@@ -18,8 +18,11 @@ protected:
     }
 
     const LoggerPtr         logger;
+    const LoggerPtr         optimal_paths_logger;
     void start_logging(size_t source, size_t target);
     void end_logging(SolutionSet &solutions, bool succ=true);
+    void end_logging(SolutionSet& solutions, bool succ, int n_expansions, int n_generations);
+    void log_optimal_paths(SolutionSet& solutions, std::string filename);
 
 public:
     virtual std::string get_solver_name() = 0;
@@ -30,6 +33,11 @@ public:
     virtual void operator()(size_t source, size_t target, Heuristic &heuristic, SolutionSet &solutions, unsigned int time_limit=UINT_MAX) = 0;
 
 
-    AbstractSolver(const AdjacencyMatrix &adj_matrix, EPS eps, const LoggerPtr logger): adj_matrix(adj_matrix), eps(eps), logger(logger) {}
+    AbstractSolver(const AdjacencyMatrix &adj_matrix, EPS eps, 
+        const LoggerPtr logger, const LoggerPtr optimal_paths_logger): adj_matrix(adj_matrix),
+        eps(eps), logger(logger), optimal_paths_logger(optimal_paths_logger) {}
+    AbstractSolver(const AdjacencyMatrix& adj_matrix, EPS eps,
+        const LoggerPtr logger) : adj_matrix(adj_matrix),
+        eps(eps), logger(logger), optimal_paths_logger(nullptr) {}
     virtual ~AbstractSolver(){}
 };

@@ -19,6 +19,13 @@ public:
             n->h = {0, 0};
         }
     }
+    void inflate_h_by_eps(double eps)
+    {
+        for (auto n : all_nodes) 
+        {
+            n->h = { (unsigned long long)(n->h[0] * (1 + eps)), (unsigned long long)(n->h[1] * (1 + eps)) };
+        }
+    }
 };
 
 #endif // EXAMPLE_SHORTEST_PATH_HEURISTIC_H

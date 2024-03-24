@@ -26,7 +26,7 @@ public:
 
 
     void set_merge_strategy(MergeStrategy new_ms){ms = new_ms;}
-    ApexSearch(const AdjacencyMatrix &adj_matrix, EPS eps, const LoggerPtr logger=nullptr);
+    ApexSearch(const AdjacencyMatrix &adj_matrix, EPS eps, const LoggerPtr logger=nullptr, const LoggerPtr optimal_paths_logger = nullptr);
     virtual void operator()(size_t source, size_t target, Heuristic &heuristic, SolutionSet &solutions, unsigned int time_limit=UINT_MAX) override;
 };
 

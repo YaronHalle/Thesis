@@ -358,7 +358,7 @@ bool export_contracted_edges(std::string filename, std::vector<ContractedEdge> c
             file << edge.source << "," << edge.target << ",";
             for (int obj_id = 0; obj_id < n_objectives; obj_id++)
             {
-                file << edge.costs[obj_id];
+                file << (long)edge.costs[obj_id];
                 if (obj_id + 1 < n_objectives)
                 {
                     file << ",";
@@ -663,7 +663,7 @@ bool all_pairs_shortest_paths(std::vector<int> cluster_nodes, std::vector<int> b
             int contracting_obj_id;
             bool pathContractable = is_path_contractable(costs, approx_factor, &contracting_obj_id);
 
-            // debug
+            // Keeping track of contractability vs path length statistics
             std::vector<int> data = { path_length, (int)pathContractable };
             stats.push_back(data);
 
@@ -676,7 +676,13 @@ bool all_pairs_shortest_paths(std::vector<int> cluster_nodes, std::vector<int> b
                 cntrctEdge.costs.resize(objectives_count);
                 for (int objective_id = 0; objective_id < objectives_count; objective_id++)
                 {
-                    cntrctEdge.costs[objective_id] = costs[contracting_obj_id][objective_id];
+                    // There's a subtle issue here, whether the costs of the contracted edge
+                    // should be the minimum of c1 and c2, like in the A*pex paper. 
+                    // Alternatively, we can take only one of the extreme solutions and 
+                    // use its true costs without mixing between the two extreme solutions.
+
+                    //cntrctEdge.costs[objective_id] = costs[contracting_obj_id][objective_id];
+                    cntrctEdge.costs[objective_id] = costs[objective_id][objective_id];
                 }
                 contractedEdges.push_back(cntrctEdge);
             }

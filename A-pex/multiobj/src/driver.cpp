@@ -26,12 +26,19 @@ std::string alg_variant = "";
 
 // Simple example to demonstarte the usage of the algorithm
 
-void single_run_map(size_t graph_size, AdjacencyMatrix& graph, AdjacencyMatrix&inv_graph, size_t source, size_t target, std::ofstream& output, std::string algorithm, MergeStrategy ms, LoggerPtr logger, double eps, unsigned int time_limit) {
+void single_run_map(size_t graph_size, AdjacencyMatrix& graph, AdjacencyMatrix&inv_graph, size_t source, size_t target, std::ofstream& output, std::string algorithm, MergeStrategy ms, LoggerPtr logger, 
+    double eps, unsigned int time_limit, bool inflate_h, LoggerPtr optimal_paths_logger)
+{
     // Compute heuristic
     std::cout << "Start Computing Heuristic" << std::endl;
     ShortestPathHeuristic sp_heuristic(target, graph_size, inv_graph);
-    // sp_heuristic.set_all_to_zero();
-    std::cout << "Finish Computing Heuristic\n" << std::endl;
+
+    // Yaron 16-03-23 : Inflating heuristics according to a user-defined eps (eps>=0)
+    if (inflate_h)
+    {
+        sp_heuristic.inflate_h_by_eps(eps);
+        std::cout << "Heuristic was inflated by a factor of " << (1 + eps) << std::endl;
+    }
 
     using std::placeholders::_1;
     Heuristic heuristic = std::bind( &ShortestPathHeuristic::operator(), sp_heuristic, _1);
@@ -53,7 +60,7 @@ void single_run_map(size_t graph_size, AdjacencyMatrix& graph, AdjacencyMatrix&i
         // ((ApexSearch*)solver.get())->set_merge_strategy(ms);
     }else if (algorithm == "Apex"){
         EPS eps_vec (graph.get_num_of_objectives(), eps);
-        solver = std::make_unique<ApexSearch>(graph, eps_vec, logger);
+        solver = std::make_unique<ApexSearch>(graph, eps_vec, logger, optimal_paths_logger);
         ((ApexSearch*)solver.get())->set_merge_strategy(ms);
     }else{
         std::cerr << "unknown solver name" << std::endl;
@@ -63,8 +70,9 @@ void single_run_map(size_t graph_size, AdjacencyMatrix& graph, AdjacencyMatrix&i
     (*solver)(source, target, heuristic, solutions, time_limit);
     runtime = std::clock() - start;
 
-    std::cout << "Node expansion: " << solver->get_num_expansion() << std::endl;
-    std::cout << "Runtime: " <<  ((double) runtime) / CLOCKS_PER_SEC<< std::endl;
+    std::cout << "Generations count: " << solver->get_num_generation() << std::endl;
+    std::cout << "Node expansions count: " << solver->get_num_expansion() << std::endl;
+    std::cout << "Runtime [sec]: " <<  ((double) runtime) / CLOCKS_PER_SEC<< std::endl;
     num_exp = solver->get_num_expansion();
     num_gen = solver->get_num_generation();
     for (auto sol: solutions){
@@ -83,17 +91,19 @@ void single_run_map(size_t graph_size, AdjacencyMatrix& graph, AdjacencyMatrix&i
     std::cout << "-----End Single Example-----" << std::endl;
 }
 
-void single_run_map(size_t graph_size, std::vector<Edge> & edges, size_t source, size_t target, std::string output_file, std::string algorithm, MergeStrategy ms, LoggerPtr logger, double eps, int time_limit) {
-
+void single_run_map(size_t graph_size, std::vector<Edge> & edges, size_t source, size_t target, std::string output_file, std::string algorithm, MergeStrategy ms, 
+    LoggerPtr logger, double eps, int time_limit, bool inflate_h, LoggerPtr optimal_paths_logger) 
+{
     AdjacencyMatrix graph(graph_size, edges);
     AdjacencyMatrix inv_graph(graph_size, edges, true);
     std::ofstream stats;
     stats.open(output_path + output_file, std::fstream::app);
 
-    single_run_map(graph_size, graph, inv_graph, source, target, stats, algorithm, ms, logger, eps, time_limit);
+    single_run_map(graph_size, graph, inv_graph, source, target, 
+        stats, algorithm, ms, logger, eps, time_limit, inflate_h, optimal_paths_logger);
  }
 
-void run_query(size_t graph_size, std::vector<Edge> & edges, std::string query_file, std::string output_file, std::string algorithm, MergeStrategy ms, LoggerPtr logger, double eps, int time_limit) {
+void run_query(size_t graph_size, std::vector<Edge> & edges, std::string query_file, std::string output_file, std::string algorithm, MergeStrategy ms, LoggerPtr logger, double eps, int time_limit, bool inflate_h) {
     std::ofstream stats;
     stats.open(output_path + output_file, std::fstream::app);
 
@@ -116,7 +126,8 @@ void run_query(size_t graph_size, std::vector<Edge> & edges, std::string query_f
         size_t source = iter->first;
         size_t target = iter->second;
 
-        single_run_map(graph_size, graph, inv_graph, source, target, stats, algorithm, ms, logger, eps, time_limit);
+        single_run_map(graph_size, graph, inv_graph, source, target, stats, algorithm, ms, 
+            logger, eps, time_limit, inflate_h, nullptr);
     }
 
 }
@@ -137,9 +148,11 @@ int main(int argc, char** argv){
         ("eps,e", po::value<double>()->default_value(0), "approximation factor")
         ("merge", po::value<std::string>()->default_value(""), "strategy for merging apex node pair: SMALLER_G2, RANDOM or MORE_SLACK")
         ("algorithm,a", po::value<std::string>()->default_value("Apex"), "solvers (BOA, PPA or Apex search)")
+        ("inflate_h,h", po::value<bool>()->default_value(false), "flag (true/false) whether to inflate the heuristics by the given epsilon")
         ("cutoffTime,t", po::value<int>()->default_value(300), "cutoff time (seconds)")
         ("output,o", po::value<std::string>()->required(), "Name of the output file")
         ("logging_file,l", po::value<std::string>()->default_value(""), "logging file" )
+        ("optimal_paths_log,p", po::value<std::string>()->default_value(""), "optimal paths log file")
         ;
 
     po::variables_map vm;
@@ -161,11 +174,16 @@ int main(int argc, char** argv){
     }
     
     LoggerPtr logger = nullptr;
+    LoggerPtr optimal_paths_logger = nullptr;
+
 
     if (vm["logging_file"].as<std::string>() != ""){
         logger = new Logger(vm["logging_file"].as<std::string>());
     }
-
+    if (vm["optimal_paths_log"].as<std::string>() != "") {
+        optimal_paths_logger = new Logger(vm["optimal_paths_log"].as<std::string>());
+    }
+    
     // Load files
     size_t graph_size;
     std::vector<Edge> edges;
@@ -203,11 +221,14 @@ int main(int argc, char** argv){
         std::cerr << "unknown merge strategy" << std::endl;
     }
 
+    // Determining whether heuristics should be inflated
+    bool inflate_h = vm["inflate_h"].as<bool>();
 
     if (vm["query"].as<std::string>() != ""){
-        run_query(graph_size, edges, vm["query"].as<std::string>(), vm["output"].as<std::string>(), vm["algorithm"].as<std::string>(), ms, logger, vm["eps"].as<double>(), vm["cutoffTime"].as<int>());
+        run_query(graph_size, edges, vm["query"].as<std::string>(), vm["output"].as<std::string>(), vm["algorithm"].as<std::string>(), ms, logger, vm["eps"].as<double>(), vm["cutoffTime"].as<int>(), inflate_h);
     } else{
-        single_run_map(graph_size, edges, vm["start"].as<int>(), vm["goal"].as<int>(), vm["output"].as<std::string>(), vm["algorithm"].as<std::string>(), ms, logger, vm["eps"].as<double>(), vm["cutoffTime"].as<int>());
+        single_run_map(graph_size, edges, vm["start"].as<int>(), vm["goal"].as<int>(), vm["output"].as<std::string>(), vm["algorithm"].as<std::string>(), ms, logger, 
+            vm["eps"].as<double>(), vm["cutoffTime"].as<int>(), inflate_h, optimal_paths_logger);
     }
 
     delete(logger);

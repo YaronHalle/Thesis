@@ -6,8 +6,9 @@
 #include "ApexSearch.h"
 
 
-ApexSearch::ApexSearch(const AdjacencyMatrix &adj_matrix, EPS eps, const LoggerPtr logger) :
-    AbstractSolver(adj_matrix, eps, logger),
+ApexSearch::ApexSearch(const AdjacencyMatrix &adj_matrix, EPS eps, 
+    const LoggerPtr logger, const LoggerPtr optimal_paths_logger) :
+    AbstractSolver(adj_matrix, eps, logger, optimal_paths_logger),
     num_of_objectives(adj_matrix.get_num_of_objectives())
 {
     expanded.resize(this->adj_matrix.size()+1);
@@ -63,7 +64,6 @@ void ApexSearch::operator()(size_t source, size_t target, Heuristic &heuristic, 
     init_search();
 
     auto start_time = std::clock();
-
     if (num_of_objectives == 2){
         local_dom_checker = std::make_unique<LocalCheck>(eps, this->adj_matrix.size());
         solution_dom_checker = std::make_unique<SolutionCheck>(eps);
@@ -71,7 +71,6 @@ void ApexSearch::operator()(size_t source, size_t target, Heuristic &heuristic, 
         local_dom_checker = std::make_unique<LocalCheckLinear>(eps, this->adj_matrix.size());
         solution_dom_checker = std::make_unique<SolutionCheckLinear>(eps);
     }
-
 
     this->start_logging(source, target);
 
@@ -138,6 +137,7 @@ void ApexSearch::operator()(size_t source, size_t target, Heuristic &heuristic, 
             // Dominance check
             // if ((((1+this->eps[1])*(bottom_right_next_g[1]+next_h[1])) >= min_g2[target]) ||
             //     (bottom_right_next_g[1] >= min_g2[next_id])) {
+            
             if (is_dominated(next_ap)){
                 continue;
             }
@@ -157,7 +157,15 @@ void ApexSearch::operator()(size_t source, size_t target, Heuristic &heuristic, 
 
     }
 
-    this->end_logging(solutions);
+    //this->end_logging(solutions);
+    // Adding number of expansions and generations to the JSON log file
+    this->end_logging(solutions, true, this->get_num_expansion(), this->get_num_generation());
+
+    /*
+    // Display and save to file the optimal paths
+    std::string optimal_paths_filename = "optimal_paths.json";
+    this->log_optimal_paths(solutions, optimal_paths_filename);
+    */
 }
 
 std::string ApexSearch::get_solver_name() {
