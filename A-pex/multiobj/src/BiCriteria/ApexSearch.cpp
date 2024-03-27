@@ -161,11 +161,9 @@ void ApexSearch::operator()(size_t source, size_t target, Heuristic &heuristic, 
     // Adding number of expansions and generations to the JSON log file
     this->end_logging(solutions, true, this->get_num_expansion(), this->get_num_generation());
 
-    /*
     // Display and save to file the optimal paths
     std::string optimal_paths_filename = "optimal_paths.json";
-    this->log_optimal_paths(solutions, optimal_paths_filename);
-    */
+    //this->log_optimal_paths(solutions, optimal_paths_filename);
 }
 
 std::string ApexSearch::get_solver_name() {

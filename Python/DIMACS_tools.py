@@ -112,6 +112,95 @@ def generate_multiple_correlated_graph(distance_filename, time_filename, coords_
 
     export_clusters_file(clusters_mapping, clusters_metafile)
 
+
+def generate_triobjective_multiple_correlated_graph(distance_filename, time_filename, coords_filename,
+                                       clusters_count, new_distance_gr_filename, new_time_gr_filename,
+                                       new_coords_filename, new_fuel_gr_filename,
+                                       clusters_metafile, min_lon=None, max_lon=None, min_lat=None, max_lat=None):
+    # Reading the graphs
+    c1_graph, vertices_count = load_graph(distance_filename)
+    c2_graph, _ = load_graph(time_filename)
+    edges_count = c1_graph.shape[0]
+    coordinates = read_coords_file(coords_filename)
+
+    # Computing the original correlation between the two cost functions
+    original_corr = pearson_correlation(c1_graph[:, 2], c2_graph[:, 2])
+
+    # Filtering only the desired area of interest
+    if min_lon is not None:
+        inside_nodes = np.array(np.where(
+            (coordinates[:, 0] >= min_lon) & (coordinates[:, 0] <= max_lon) &
+            (coordinates[:, 1] >= min_lat) & (coordinates[:, 1] <= max_lat)))
+
+        inside_nodes = inside_nodes.reshape(inside_nodes.shape[1])
+
+        coordinates = coordinates[inside_nodes, :]
+
+        inside_nodes += 1
+
+        valid_start_nodes = np.where(np.in1d(c1_graph[:, 0], inside_nodes))[0]
+        valid_end_nodes = np.where(np.in1d(c1_graph[:, 1], inside_nodes))[0]
+        intersection = np.intersect1d(valid_start_nodes, valid_end_nodes)
+        c1_graph = c1_graph[intersection, :]
+        c2_graph = c2_graph[intersection, :]
+
+        vertices_count = coordinates.shape[0]
+        edges_count = c1_graph.shape[0]
+        vertices_set = set(coordinates[:, 2])
+
+    # Computing the geographic east and north extent
+    east_width = max(coordinates[:, 0]) - min(coordinates[:, 0])
+    north_width = max(coordinates[:, 1]) - min(coordinates[:, 1])
+    sw_corner_east = min(coordinates[:, 0])
+    sw_corner_north = min(coordinates[:, 1])
+
+    clusters_center_x = sw_corner_east + np.random.uniform(0, 1, clusters_count) * east_width
+    clusters_center_y = sw_corner_north + np.random.uniform(0, 1, clusters_count) * north_width
+
+    clusters_radius = np.random.uniform(east_width / 30, east_width / 20, clusters_count)
+
+    updated_nodes = np.array([]).reshape(-1, 2)
+    clusters_correlation = 0
+    cluster_id = 0
+    for cluster_id in range(clusters_count):
+        print(f'Cluster {cluster_id + 1} / {clusters_count}...')
+        # Retrieving the list of nodes indices that reside inside the bounding circle
+        nodes = points_inside_circle(coordinates[:, 0:2], [clusters_center_x[cluster_id], clusters_center_y[cluster_id]],
+                                     clusters_radius[cluster_id])
+
+        # Keeping track of nodes to be updated
+        nodes_with_corr = np.hstack((nodes.reshape(-1, 1), np.ones((len(nodes), 1)) * clusters_correlation))
+        updated_nodes = np.concatenate((updated_nodes, nodes_with_corr))
+
+        # Updating the weight of all the edges that leave the desired nodes
+        edges_to_be_updated = np.array([])
+        for node in nodes:
+            edges_to_be_updated = np.concatenate((edges_to_be_updated, np.argwhere(c1_graph[:, 0] == node).flatten()))
+
+        if len(edges_to_be_updated) > 0:
+            distance_cost, time_cost = generate_correlated_vectors(len(edges_to_be_updated), target_correlation=clusters_correlation)
+            c1_graph[edges_to_be_updated.astype(int), 2] = distance_cost
+            c2_graph[edges_to_be_updated.astype(int), 2] = time_cost
+
+        vertices_set = vertices_set - set(coordinates[nodes, 2])
+
+    # Exporting new files
+    export_gr_file(c1_graph, vertices_count, edges_count, new_distance_gr_filename,
+                   'Distance graph for multiple correlated clusters')
+    export_gr_file(c2_graph, vertices_count, edges_count, new_time_gr_filename,
+                   'Time graph for multiple correlated clusters')
+    export_coords_file(coordinates, vertices_count, new_coords_filename,
+                       'Filtered NY coords file')
+
+    clusters_mapping = np.zeros((len(vertices_set), 2))
+    clusters_mapping[:, 0] = cluster_id
+    clusters_mapping[:, 1] = np.array(list(vertices_set)).astype(int)
+
+    export_clusters_file(clusters_mapping, clusters_metafile)
+
+
+
+
 def load_graph(filename):
     edge_ind = 0
     with open(filename, "r") as f:

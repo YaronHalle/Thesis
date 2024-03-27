@@ -175,3 +175,35 @@ if __name__ == '__main__':
     # Plotting testbench_E results
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     # analyze_testbench_F(output_dir, samples)
+
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # Generating a 3 objective, correlated graph
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # coords_filename = r'D:\Thesis\DIMCAS\NY_correlated\USA-road-d.NY.co'
+    distance_filename = r'D:\Thesis\DIMCAS\NY\USA-road-d.NY.gr'
+    # distance_filename = r"D:\Thesis\DIMCAS\NY_correlated\Distance_corr_96.gr"
+    # distance_filename = r"D:\Thesis\DIMCAS\NY_correlated\Multiple_Clusters\Rayleigh_Distance_corr_96.gr"
+
+    time_filename = r'D:\Thesis\DIMCAS\NY\USA-road-t.NY.gr'
+    # time_filename = r"D:\Thesis\DIMCAS\NY_correlated\Time_corr_96.gr"
+    # time_filename = r"D:\Thesis\DIMCAS\NY_correlated\Multiple_Clusters\Rayleigh_Time_corr_96.gr"
+
+    clusters_count = 40
+    # clusters_count = 0
+    new_distance_gr_filename = r'D:\Thesis\DIMCAS\NY_correlated\Multiple_Clusters\3objs\Distance_NY_096_corr_clustered.gr'
+    new_time_gr_filename = r'D:\Thesis\DIMCAS\NY_correlated\Multiple_Clusters\3objs\Time_NY_096_corr_clustered.gr'
+    new_fuel_gr_filename = r'D:\Thesis\DIMCAS\NY_correlated\Multiple_Clusters\3objs\Fuel_NY_096_corr_clustered.gr'
+    new_coords_filename = r'D:\Thesis\DIMCAS\NY_correlated\Multiple_Clusters\3objs\NY_096_corr_clustered.co'
+    clusters_metafile = r'D:\Thesis\DIMCAS\NY_correlated\Multiple_Clusters\3objs\NY_096_corr_clusters_metafile.txt'
+    # min_lat = 4.058e7
+    # max_lat = 4.058e7 + (4.08e7 - 4.058e7) * 0.75
+    # min_lon = -7.41e7
+    # max_lon = -7.41e7 + (-7.36e7 + 7.41e7) * 0.75
+    min_lat = 4.058e7
+    max_lat =  4.1e7  # 4.1e7  4.08e7
+    min_lon = -7.41e7
+    max_lon = -7.36e7  # -7.31e7
+    generate_triobjective_multiple_correlated_graph(distance_filename, time_filename, coords_filename,
+                                       clusters_count, new_distance_gr_filename,
+                                       new_time_gr_filename, new_fuel_gr_filename,new_coords_filename,
+                                       clusters_metafile, min_lon, max_lon, min_lat, max_lat)

@@ -42,6 +42,7 @@ int main(int argc, char** argv)
     // ==========================================================================
     size_t graph_size;
     std::vector<Edge> edges;
+    int objectives_count = objective_files.size();
 
     std::cout << "Loading the following objective graphs:" << endl;
     for (auto file : objective_files) {
@@ -73,7 +74,8 @@ int main(int argc, char** argv)
     // ==========================================================================
     // Computing all-pairs shortest-path between all boundary nodes
     // ==========================================================================
-    std::vector<double> approx_factor = { 0.01, 0.01 };
+    double eps = vm["eps"].as<double>();
+    std::vector<double> approx_factor = std::vector<double>(objectives_count, eps);
     for (int cluster_id = 0; cluster_id < clusters_map.size(); cluster_id++)
     {
         // Creating a lookup table of all nodes inside the cluster
@@ -118,7 +120,8 @@ int main(int argc, char** argv)
         std::vector<ContractedEdge> contractedEdges;
         std::vector<std::vector<int>> stats;
         all_pairs_shortest_paths(cluster_nodes, boundary_nodes, graph, approx_factor, contractedEdges, stats);
-       
+        
+        /*
         // Exporting to file the new contracted edges and their weights
         std::cout << "Exporting contracted edges to file ... ";
         string edges_filename = "Contracted_Edges.csv";
@@ -130,6 +133,7 @@ int main(int argc, char** argv)
         string stats_filename = "pathLength_vs_Contractability.csv";
         export_contractability_vs_pathlength_stats(stats_filename, stats);
         std::cout << "Done" << std::endl;
+        */
     }
 
     return 0;
